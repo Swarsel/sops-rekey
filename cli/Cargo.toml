@@ -1,0 +1,17 @@
+[package]
+name = "sops-rekey"
+version = "0.1.0"
+edition = "2021"
+description = "Rekey and generate sops secrets for NixOS hosts"
+license = "MIT"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4.5", features = ["derive", "env"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+serde_yaml_ng = "0.10"
+sha2 = "0.10"
+
+[profile.release]
+strip = true
