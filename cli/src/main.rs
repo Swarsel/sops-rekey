@@ -1,1 +1,3 @@
+mod manifest;
+
 fn main() {}
