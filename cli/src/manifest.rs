@@ -94,6 +94,7 @@ impl Manifest {
                 }
             }
         }
+        crate::graph::check_acyclic(self)?;
         Ok(())
     }
 
