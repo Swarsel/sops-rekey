@@ -1,8 +1,8 @@
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use anyhow::{bail, Context, Result};
-use serde_json::Value;
+use anyhow::{anyhow, bail, Context, Result};
+use serde_json::{Map, Value};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Format {
@@ -59,6 +59,16 @@ impl Recipients {
 #[derive(Debug, Default, Clone)]
 pub struct EncryptOpts {
     pub flags: Vec<(String, String)>,
+}
+
+#[derive(Debug, Default)]
+pub struct Metadata {
+    pub pgp: Vec<String>,
+    pub age: Vec<String>,
+    pub foreign_keys: Vec<String>,
+    pub key_groups: bool,
+    pub opts: EncryptOpts,
+    pub mac_only_encrypted: bool,
 }
 
 pub struct Sops {
@@ -127,6 +137,130 @@ impl Sops {
     }
 }
 
+pub fn read_structure(path: &Path, format: Format) -> Result<Option<Value>> {
+    let data = match std::fs::read(path) {
+        Ok(d) => d,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e).with_context(|| format!("reading {}", path.display())),
+    };
+    let ctx = || format!("parsing encrypted {}", path.display());
+    let mut v = match format {
+        Format::Yaml => serde_yaml_ng::from_slice::<Value>(&data).with_context(ctx)?,
+        Format::Json | Format::Binary => {
+            serde_json::from_slice::<Value>(&data).with_context(ctx)?
+        }
+        Format::Dotenv => parse_dotenv(&String::from_utf8_lossy(&data)),
+        Format::Ini => parse_ini(&String::from_utf8_lossy(&data)),
+    };
+    if format == Format::Dotenv {
+        if let Value::Object(m) = &mut v {
+            m.retain(|k, _| !k.starts_with("sops_"));
+        }
+    }
+    Ok(Some(v))
+}
+
+fn parse_dotenv(s: &str) -> Value {
+    let mut m = Map::new();
+    for line in s.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some((k, v)) = line.split_once('=') {
+            m.insert(k.trim().to_string(), Value::String(v.to_string()));
+        }
+    }
+    Value::Object(m)
+}
+
+fn parse_ini(s: &str) -> Value {
+    let mut root = Map::new();
+    let mut section = String::new();
+    for line in s.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with(';') || line.starts_with('#') {
+            continue;
+        }
+        if let Some(name) = line.strip_prefix('[').and_then(|l| l.strip_suffix(']')) {
+            section = name.trim().to_string();
+            continue;
+        }
+        if let Some((k, v)) = line.split_once('=') {
+            if section == "sops" {
+                continue;
+            }
+            let entry = root
+                .entry(section.clone())
+                .or_insert_with(|| Value::Object(Map::new()));
+            if let Value::Object(sec) = entry {
+                sec.insert(k.trim().to_string(), Value::String(v.trim().to_string()));
+            }
+        }
+    }
+    Value::Object(root)
+}
+
+pub fn metadata(path: &Path, format: Format) -> Result<Metadata> {
+    if matches!(format, Format::Dotenv | Format::Ini) {
+        bail!(
+            "reading metadata of {} files is not supported",
+            format.as_str()
+        );
+    }
+    let tree = read_structure(path, format)?
+        .ok_or_else(|| anyhow!("{} does not exist", path.display()))?;
+    let sops = tree
+        .get("sops")
+        .and_then(Value::as_object)
+        .ok_or_else(|| anyhow!("{} is not a sops file (no metadata)", path.display()))?;
+    let mut md = Metadata::default();
+    let list = |key: &str, field: &str| -> Vec<String> {
+        sops.get(key)
+            .and_then(Value::as_array)
+            .map(|a| {
+                a.iter()
+                    .filter_map(|e| e.get(field)?.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    md.pgp = list("pgp", "fp");
+    md.age = list("age", "recipient");
+    for key in ["kms", "gcp_kms", "azure_kv", "hc_vault", "hckms"] {
+        if sops
+            .get(key)
+            .and_then(Value::as_array)
+            .is_some_and(|a| !a.is_empty())
+        {
+            md.foreign_keys.push(key.to_string());
+        }
+    }
+    md.key_groups = sops
+        .get("key_groups")
+        .and_then(Value::as_array)
+        .is_some_and(|a| !a.is_empty());
+    md.mac_only_encrypted = sops
+        .get("mac_only_encrypted")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    for key in [
+        "unencrypted_suffix",
+        "encrypted_suffix",
+        "unencrypted_regex",
+        "encrypted_regex",
+        "unencrypted_comment_regex",
+        "encrypted_comment_regex",
+    ] {
+        if let Some(v) = sops.get(key).and_then(Value::as_str) {
+            md.opts
+                .flags
+                .push((format!("--{}", key.replace('_', "-")), v.to_string()));
+        }
+    }
+    Ok(md)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -140,5 +274,22 @@ mod tests {
         assert_eq!(Format::from_path("b.ini"), Format::Ini);
         assert_eq!(Format::from_path("b.age"), Format::Binary);
         assert_eq!(Format::from_path("noext"), Format::Binary);
+    }
+
+    #[test]
+    fn dotenv_structure_hides_metadata() {
+        let dir = std::env::temp_dir().join(format!("sops-rekey-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("x.env");
+        std::fs::write(&p, "# c\nFOO=ENC[...]\nsops_version=3.9.0\n").unwrap();
+        let v = read_structure(&p, Format::Dotenv).unwrap().unwrap();
+        assert_eq!(v, serde_json::json!({"FOO": "ENC[...]"}));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn ini_structure() {
+        let v = parse_ini("[a]\nx = ENC\n[sops]\nversion = 3\n");
+        assert_eq!(v, serde_json::json!({"a": {"x": "ENC"}}));
     }
 }
