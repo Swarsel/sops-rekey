@@ -7,6 +7,7 @@ use serde_json::Value;
 
 use crate::graph;
 use crate::identities;
+use crate::index::{Desired, Index, IndexGroup, IndexSecret, INDEX_FILE};
 use crate::manifest::Manifest;
 use crate::sops::{self, EncryptOpts, Format, Recipients, Sops};
 use crate::tree;
@@ -278,6 +279,226 @@ impl Repo {
             "Generated {} secret(s). Run `sops-rekey rekey` to distribute them.",
             order.len()
         );
+        Ok(())
+    }
+
+    fn storage_dir(&self) -> Result<Option<String>> {
+        Ok(self.m.storage_dir()?.map(str::to_string))
+    }
+
+    fn group_recipients(&self, desired: &Desired) -> Result<BTreeMap<String, Vec<String>>> {
+        let mut cache: BTreeMap<&str, String> = BTreeMap::new();
+        let mut out = BTreeMap::new();
+        for (g, hosts) in &desired.groups {
+            let mut recipients = Vec::new();
+            for (host, pk) in hosts {
+                if !cache.contains_key(pk.as_str()) {
+                    let r = util::to_age_recipient(pk)
+                        .with_context(|| format!("pubkey of host {host}"))?;
+                    cache.insert(pk, r);
+                }
+                recipients.push(cache[pk.as_str()].clone());
+            }
+            out.insert(g.clone(), recipients);
+        }
+        Ok(out)
+    }
+
+    fn group_staleness(
+        &self,
+        g: &str,
+        desired: &Desired,
+        index: &Index,
+        storage: &str,
+        hashes: &BTreeMap<String, Option<String>>,
+        rewritten_files: &BTreeSet<String>,
+    ) -> Option<String> {
+        let Some(ig) = index.groups.get(g) else {
+            return Some("new group".into());
+        };
+        if ig.hosts != desired.groups[g] {
+            return Some("hosts or host keys changed".into());
+        }
+        let want = desired.group_secrets(g);
+        if index.group_secrets(g) != want {
+            return Some("set of secrets changed".into());
+        }
+        for id in want {
+            let file = &self.m.secrets[id].file;
+            if rewritten_files.contains(file) {
+                return Some(format!("{file} is being regenerated"));
+            }
+            if index.secrets.get(id).map(|s| Some(&s.master_hash)) != Some(hashes[file].as_ref()) {
+                return Some(format!("{file} changed"));
+            }
+        }
+        if !self.path(storage).join(format!("{g}.yaml")).exists() {
+            return Some("file missing".into());
+        }
+        None
+    }
+
+    fn hashes(&self) -> Result<BTreeMap<String, Option<String>>> {
+        let mut out = BTreeMap::new();
+        for s in self.m.secrets.values() {
+            if !out.contains_key(&s.file) {
+                out.insert(s.file.clone(), util::hash_file(&self.path(&s.file))?);
+            }
+        }
+        Ok(out)
+    }
+
+    fn build_index(
+        &self,
+        desired: &Desired,
+        recipients: &BTreeMap<String, Vec<String>>,
+        hashes: &BTreeMap<String, Option<String>>,
+    ) -> Index {
+        Index {
+            version: 1,
+            secrets: desired
+                .secret_group
+                .iter()
+                .map(|(id, g)| {
+                    let file = &self.m.secrets[id].file;
+                    (
+                        id.clone(),
+                        IndexSecret {
+                            group: g.clone(),
+                            master_hash: hashes[file].clone().unwrap_or_default(),
+                        },
+                    )
+                })
+                .collect(),
+            groups: desired
+                .groups
+                .iter()
+                .map(|(g, hosts)| {
+                    (
+                        g.clone(),
+                        IndexGroup {
+                            hosts: hosts.clone(),
+                            recipients: recipients[g].clone(),
+                        },
+                    )
+                })
+                .collect(),
+        }
+    }
+
+    fn warn_missing_pubkeys(desired: &Desired) {
+        for h in &desired.hosts_without_pubkey {
+            eprintln!("warning: host {h} has no sops.rekey.hostPubkey and gets no secrets");
+        }
+    }
+
+    pub fn rekey(&mut self, force: bool) -> Result<()> {
+        let Some(storage) = self.storage_dir()? else {
+            eprintln!("No host uses rekeyed secrets.");
+            return Ok(());
+        };
+        let missing = self.missing()?;
+        let no_generator: Vec<&String> = missing
+            .iter()
+            .filter(|id| self.m.generator(id).is_none())
+            .collect();
+        if !no_generator.is_empty() {
+            let list: Vec<String> = no_generator
+                .iter()
+                .map(|id| format!("  {id} (in {})", self.m.secrets[*id].file))
+                .collect();
+            bail!("these secrets don't exist and have no generator; add them with `sops-rekey edit`:\n{}", list.join("\n"));
+        }
+        let gen_order = self.plan_generation(&missing, false, &missing)?;
+        let rewritten_files: BTreeSet<String> = gen_order
+            .iter()
+            .map(|id| self.m.secrets[id].file.clone())
+            .collect();
+
+        let desired = Desired::compute(&self.m);
+        Self::warn_missing_pubkeys(&desired);
+        let recipients = self.group_recipients(&desired)?;
+        let index_path = self.path(&storage).join(INDEX_FILE);
+        let index = Index::load(&index_path)?;
+        let hashes = self.hashes()?;
+
+        let mut to_write = BTreeMap::new();
+        for g in desired.groups.keys() {
+            let reason = if force {
+                Some("forced".to_string())
+            } else {
+                self.group_staleness(g, &desired, &index, &storage, &hashes, &rewritten_files)
+            };
+            if let Some(r) = reason {
+                to_write.insert(g.clone(), r);
+            }
+        }
+        let obsolete: Vec<&String> = index
+            .groups
+            .keys()
+            .filter(|g| !desired.groups.contains_key(*g))
+            .collect();
+
+        let mut needed = self.generation_inputs(&gen_order);
+        for g in to_write.keys() {
+            for id in desired.group_secrets(g) {
+                needed.insert(self.m.secrets[id].file.clone());
+            }
+        }
+        let mut plain = self.decrypt_all(&needed)?;
+
+        self.run_generators(&gen_order, &mut plain)?;
+        self.write_masters(&plain)?;
+        let hashes = self.hashes()?;
+
+        let sops = Sops::new(None);
+        for (g, reason) in &to_write {
+            let mut doc = Value::Null;
+            for id in desired.group_secrets(g) {
+                let path: Vec<&str> = id.split('/').collect();
+                tree::insert(
+                    &mut doc,
+                    &path,
+                    Value::String(plain.leaf(&self.m, id)?),
+                    false,
+                )
+                .with_context(|| format!("building group {g}"))?;
+            }
+            let file = format!("{g}.yaml");
+            let data = serde_json::to_vec(&doc)?;
+            let r = Recipients {
+                pgp: vec![],
+                age: recipients[g].clone(),
+            };
+            let out = sops.encrypt(
+                &data,
+                Format::Json,
+                Format::Yaml,
+                &file,
+                &r,
+                &EncryptOpts::default(),
+            )?;
+            let path = self.path(&storage).join(&file);
+            util::write_atomic(&path, &out)?;
+            eprintln!("Rekeyed {storage}/{file} ({reason})");
+            self.touched.written.push(path);
+        }
+        for g in obsolete {
+            let path = self.path(&storage).join(format!("{g}.yaml"));
+            if path.exists() {
+                std::fs::remove_file(&path)?;
+            }
+            eprintln!("Removed obsolete {storage}/{g}.yaml");
+            self.touched.deleted.push(path);
+        }
+        let new_index = self.build_index(&desired, &recipients, &hashes);
+        if new_index != index || !index_path.exists() {
+            util::write_atomic(&index_path, &new_index.to_bytes())?;
+            self.touched.written.push(index_path);
+        }
+        if to_write.is_empty() && gen_order.is_empty() && self.touched.deleted.is_empty() {
+            eprintln!("Everything is up to date.");
+        }
         Ok(())
     }
 }

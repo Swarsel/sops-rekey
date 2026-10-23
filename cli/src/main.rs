@@ -42,6 +42,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
+    #[command(about = "Generate missing secrets, then rekey all out-of-date group files")]
+    Rekey {
+        #[arg(short, long, help = "Rewrite all group files, even if up to date")]
+        force: bool,
+    },
     #[command(about = "Generate secrets that have a generator")]
     Generate {
         #[arg(
@@ -66,6 +71,7 @@ fn run(cli: Cli) -> Result<bool> {
     let manifest = manifest::Manifest::load(&cli.manifest)?;
     let mut repo = commands::Repo::new(util::find_root()?, manifest);
     let ok = match &cli.command {
+        Cmd::Rekey { force } => repo.rekey(*force).map(|_| true),
         Cmd::Generate {
             force,
             tags,
