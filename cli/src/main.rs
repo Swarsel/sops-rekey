@@ -65,6 +65,8 @@ enum Cmd {
         #[arg(help = "Secret ids, `sops.secrets` names or `host:name` (default: all)")]
         secrets: Vec<String>,
     },
+    #[command(about = "Exit non-zero if anything needs generating or rekeying; never decrypts")]
+    Check,
 }
 
 fn run(cli: Cli) -> Result<bool> {
@@ -77,6 +79,7 @@ fn run(cli: Cli) -> Result<bool> {
             tags,
             secrets,
         } => repo.generate(secrets, tags, *force).map(|_| true),
+        Cmd::Check => repo.check(),
     };
     if cli.add_to_git {
         repo.touched.git_add(&repo.root)?;

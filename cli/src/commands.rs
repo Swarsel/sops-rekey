@@ -501,4 +501,54 @@ impl Repo {
         }
         Ok(())
     }
+
+    pub fn check(&self) -> Result<bool> {
+        let mut ok = true;
+        let missing = self.missing()?;
+        for id in &missing {
+            let hint = if self.m.generator(id).is_some() {
+                "run `sops-rekey generate`"
+            } else {
+                "add it with `sops-rekey edit`"
+            };
+            println!("missing: {id} in {} ({hint})", self.m.secrets[id].file);
+            ok = false;
+        }
+        let Some(storage) = self.storage_dir()? else {
+            return Ok(ok);
+        };
+        let desired = Desired::compute(&self.m);
+        Self::warn_missing_pubkeys(&desired);
+        let index = Index::load(&self.path(&storage).join(INDEX_FILE))?;
+        let hashes = self.hashes()?;
+        for g in desired.groups.keys() {
+            if let Some(reason) =
+                self.group_staleness(g, &desired, &index, &storage, &hashes, &BTreeSet::new())
+            {
+                println!("stale: {storage}/{g}.yaml ({reason})");
+                ok = false;
+            }
+        }
+        for g in index
+            .groups
+            .keys()
+            .filter(|g| !desired.groups.contains_key(*g))
+        {
+            println!("obsolete: {storage}/{g}.yaml");
+            ok = false;
+        }
+        if ok {
+            let recipients = self.group_recipients(&desired)?;
+            if self.build_index(&desired, &recipients, &hashes) != index {
+                println!("stale: {storage}/{INDEX_FILE}");
+                ok = false;
+            }
+        }
+        if ok {
+            println!("Everything is up to date.");
+        } else {
+            println!("Run `sops-rekey rekey` to fix.");
+        }
+        Ok(ok)
+    }
 }
