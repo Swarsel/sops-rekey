@@ -148,6 +148,26 @@ impl Sops {
         }
         Ok(())
     }
+
+    pub fn rotate(&self, path: &Path, add: &Recipients, rm: &Recipients) -> Result<()> {
+        let mut cmd = self.cmd();
+        cmd.arg("rotate").arg("--in-place");
+        for (flag, list) in [
+            ("--add-pgp", &add.pgp),
+            ("--rm-pgp", &rm.pgp),
+            ("--add-age", &add.age),
+            ("--rm-age", &rm.age),
+        ] {
+            if !list.is_empty() {
+                cmd.arg(flag).arg(list.join(","));
+            }
+        }
+        let status = cmd.arg(path).status().context("running sops")?;
+        if !status.success() {
+            bail!("sops rotate failed for {}", path.display());
+        }
+        Ok(())
+    }
 }
 
 pub fn read_structure(path: &Path, format: Format) -> Result<Option<Value>> {
@@ -274,6 +294,13 @@ pub fn metadata(path: &Path, format: Format) -> Result<Metadata> {
     Ok(md)
 }
 
+pub fn normalize_fp(fp: &str) -> String {
+    fp.chars()
+        .filter(|c| !c.is_whitespace())
+        .collect::<String>()
+        .to_uppercase()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -304,5 +331,10 @@ mod tests {
     fn ini_structure() {
         let v = parse_ini("[a]\nx = ENC\n[sops]\nversion = 3\n");
         assert_eq!(v, serde_json::json!({"a": {"x": "ENC"}}));
+    }
+
+    #[test]
+    fn fingerprints() {
+        assert_eq!(normalize_fp("abcd 1234"), "ABCD1234");
     }
 }

@@ -67,6 +67,8 @@ enum Cmd {
     },
     #[command(about = "Edit (or create) a master file with sops")]
     Edit { file: PathBuf },
+    #[command(about = "Make all master files encrypted to exactly masterRecipients (pgp and age)")]
+    UpdateKeys,
     #[command(about = "Exit non-zero if anything needs generating or rekeying; never decrypts")]
     Check,
 }
@@ -82,6 +84,7 @@ fn run(cli: Cli) -> Result<bool> {
             secrets,
         } => repo.generate(secrets, tags, *force).map(|_| true),
         Cmd::Edit { file } => repo.edit(file).map(|_| true),
+        Cmd::UpdateKeys => repo.update_keys().map(|_| true),
         Cmd::Check => repo.check(),
     };
     if cli.add_to_git {

@@ -567,4 +567,80 @@ impl Repo {
         }
         Ok(())
     }
+
+    pub fn update_keys(&mut self) -> Result<()> {
+        let want = self.master_recipients()?;
+        let want_pgp: BTreeSet<String> = want.pgp.iter().map(|f| sops::normalize_fp(f)).collect();
+        let want_age: BTreeSet<&str> = want.age.iter().map(String::as_str).collect();
+        let files: BTreeSet<&String> = self.m.secrets.values().map(|s| &s.file).collect();
+        let mut plan = Vec::new();
+        for file in files {
+            let path = self.path(file);
+            if !path.exists() {
+                continue;
+            }
+            let fmt = Format::from_path(file);
+            if matches!(fmt, Format::Dotenv | Format::Ini) {
+                eprintln!(
+                    "warning: skipping {file}: update-keys does not support {} files",
+                    fmt.as_str()
+                );
+                continue;
+            }
+            let md = sops::metadata(&path, fmt)?;
+            let have_pgp: BTreeMap<String, &String> =
+                md.pgp.iter().map(|f| (sops::normalize_fp(f), f)).collect();
+            let add = Recipients {
+                pgp: want
+                    .pgp
+                    .iter()
+                    .filter(|f| !have_pgp.contains_key(&sops::normalize_fp(f)))
+                    .cloned()
+                    .collect(),
+                age: want
+                    .age
+                    .iter()
+                    .filter(|r| !md.age.contains(r))
+                    .cloned()
+                    .collect(),
+            };
+            let rm = Recipients {
+                pgp: have_pgp
+                    .iter()
+                    .filter(|(n, _)| !want_pgp.contains(*n))
+                    .map(|(_, f)| (*f).clone())
+                    .collect(),
+                age: md
+                    .age
+                    .iter()
+                    .filter(|r| !want_age.contains(r.as_str()))
+                    .cloned()
+                    .collect(),
+            };
+            if !add.is_empty() || !rm.is_empty() {
+                plan.push((file.clone(), add, rm));
+            }
+        }
+        if plan.is_empty() {
+            eprintln!("All master files are already encrypted to masterRecipients.");
+            return Ok(());
+        }
+        let sops = Sops::new(identities::load(&self.m.master_identities)?);
+        eprintln!(
+            "Updating recipients of {} master file(s). Confirm on your security key when asked.",
+            plan.len()
+        );
+        for (file, add, rm) in plan {
+            eprintln!(
+                "  {file}: +{:?} -{:?}",
+                [add.pgp.clone(), add.age.clone()].concat(),
+                [rm.pgp.clone(), rm.age.clone()].concat()
+            );
+            let path = self.path(&file);
+            sops.rotate(&path, &add, &rm)?;
+            self.touched.written.push(path);
+        }
+        eprintln!("Run `sops-rekey rekey` to refresh the rekeyed files.");
+        Ok(())
+    }
 }
