@@ -135,6 +135,19 @@ impl Sops {
         crate::util::run_with_stdin(&mut cmd, plaintext)
             .with_context(|| format!("encrypting {filename}"))
     }
+
+    pub fn edit(&self, path: &Path, recipients: &Recipients) -> Result<()> {
+        let mut cmd = self.cmd();
+        cmd.arg("edit");
+        if !path.exists() {
+            recipients.args(&mut cmd);
+        }
+        let status = cmd.arg(path).status().context("running sops")?;
+        if !status.success() && status.code() != Some(200) {
+            bail!("sops edit failed for {}", path.display());
+        }
+        Ok(())
+    }
 }
 
 pub fn read_structure(path: &Path, format: Format) -> Result<Option<Value>> {

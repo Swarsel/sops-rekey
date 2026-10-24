@@ -65,6 +65,8 @@ enum Cmd {
         #[arg(help = "Secret ids, `sops.secrets` names or `host:name` (default: all)")]
         secrets: Vec<String>,
     },
+    #[command(about = "Edit (or create) a master file with sops")]
+    Edit { file: PathBuf },
     #[command(about = "Exit non-zero if anything needs generating or rekeying; never decrypts")]
     Check,
 }
@@ -79,6 +81,7 @@ fn run(cli: Cli) -> Result<bool> {
             tags,
             secrets,
         } => repo.generate(secrets, tags, *force).map(|_| true),
+        Cmd::Edit { file } => repo.edit(file).map(|_| true),
         Cmd::Check => repo.check(),
     };
     if cli.add_to_git {

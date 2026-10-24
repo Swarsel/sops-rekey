@@ -551,4 +551,20 @@ impl Repo {
         }
         Ok(ok)
     }
+
+    pub fn edit(&mut self, file: &Path) -> Result<()> {
+        let path = std::env::current_dir()?.join(file);
+        let recipients = self.master_recipients()?;
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let sops = Sops::new(identities::load(&self.m.master_identities)?);
+        let before = util::hash_file(&path)?;
+        sops.edit(&path, &recipients)?;
+        if util::hash_file(&path)? != before {
+            self.touched.written.push(path);
+            eprintln!("Run `sops-rekey rekey` to distribute the changes.");
+        }
+        Ok(())
+    }
 }
