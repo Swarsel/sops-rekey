@@ -217,6 +217,8 @@ in
   };
 
   config = {
+    sops.rekey.generators = lib.mapAttrs (_: lib.mkDefault) (import ./generators.nix);
+
     sops.validateSopsFiles = lib.mkIf (hostPubkey == null && rekeyed != { }) (lib.mkDefault false);
 
     warnings = lib.optional (hostPubkey == null && rekeyed != { } && cfg.allowMissingPubkey) ''
