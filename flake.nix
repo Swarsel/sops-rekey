@@ -107,6 +107,17 @@
           inherit pkgs self;
           app = testApp pkgs;
         };
+        eval-stale =
+          let
+            stale = testNodes.host1.extendModules {
+              modules = [
+                { sops.rekey.hostPubkey = lib.mkForce (builtins.readFile ./tests/fixtures/host2_ed25519.pub); }
+              ];
+            };
+            result = builtins.tryEval stale.config.system.build.toplevel.drvPath;
+          in
+          assert !result.success;
+          pkgs.runCommand "sops-rekey-eval-stale" { } "touch $out";
       });
 
       devShells = forAllSystems (pkgs: {
