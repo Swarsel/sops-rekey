@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "secrets": {
+    "tests__fixtures__secrets__blob.bin": {
+      "group": "host2",
+      "masterHash": "047504d2d0912f42933a21a37cf114009e0499364031458d3eeb58c470d8604b"
+    },
+    "tests__fixtures__secrets__common.yaml/host1/only": {
+      "group": "host1",
+      "masterHash": "3dfb46e2389457d62188f53b5a5c4e5f3319306a764477db30a2526c98025066"
+    },
+    "tests__fixtures__secrets__common.yaml/shared": {
+      "group": "host1+host2",
+      "masterHash": "3dfb46e2389457d62188f53b5a5c4e5f3319306a764477db30a2526c98025066"
+    },
+    "tests__fixtures__secrets__generated.yaml/derived": {
+      "group": "host1+host2",
+      "masterHash": "0b0cc8a555650803404375de5bbeb4231297b5c2711fd0aa07eba7b3256157d2"
+    },
+    "tests__fixtures__secrets__generated.yaml/pw": {
+      "group": "host1+host2",
+      "masterHash": "0b0cc8a555650803404375de5bbeb4231297b5c2711fd0aa07eba7b3256157d2"
+    },
+    "tests__fixtures__secrets__generated.yaml/wg/host1": {
+      "group": "host1",
+      "masterHash": "0b0cc8a555650803404375de5bbeb4231297b5c2711fd0aa07eba7b3256157d2"
+    }
+  },
+  "groups": {
+    "host1": {
+      "hosts": {
+        "host1": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIE0COYDo0XFf0itwJnS/ljTJnPdmHI08wPYWdbC9UPFz host1"
+      },
+      "recipients": [
+        "age1kxgcfpuflvjpu2r0yhvjlk0lvehw08f2v49wtvj2l59gu25d03cq647vlj"
+      ]
+    },
+    "host1+host2": {
+      "hosts": {
+        "host1": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIE0COYDo0XFf0itwJnS/ljTJnPdmHI08wPYWdbC9UPFz host1",
+        "host2": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBpr5Zv13d39R4yQNFpkUTH2tXdrUAOxHO1E+NMCet+3 host2"
+      },
+      "recipients": [
+        "age1kxgcfpuflvjpu2r0yhvjlk0lvehw08f2v49wtvj2l59gu25d03cq647vlj",
+        "age1j8yzhnn32nnnt2mnkl4wsj68zsdfg2hjuyle6gag72mexrx3epeshw02xh"
+      ]
+    },
+    "host2": {
+      "hosts": {
+        "host2": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBpr5Zv13d39R4yQNFpkUTH2tXdrUAOxHO1E+NMCet+3 host2"
+      },
+      "recipients": [
+        "age1j8yzhnn32nnnt2mnkl4wsj68zsdfg2hjuyle6gag72mexrx3epeshw02xh"
+      ]
+    }
+  }
+}

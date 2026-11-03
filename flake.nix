@@ -27,6 +27,31 @@
 
       mkApp = args: import ./nix/app.nix ({ inherit lib; } // args);
 
+      testHosts = import ./tests/hosts.nix;
+      testNodes = lib.mapAttrs (
+        _: module:
+        lib.nixosSystem {
+          system = "x86_64-linux";
+          modules = [
+            sops-nix.nixosModules.sops
+            self.nixosModules.default
+            module
+            {
+              boot.loader.grub.enable = false;
+              fileSystems."/".device = "/dev/null";
+              system.stateVersion = "25.11";
+            }
+          ];
+        }
+      ) testHosts;
+      testApp =
+        pkgs:
+        mkApp {
+          inherit pkgs;
+          nodes = testNodes;
+          masterRecipients.age = [ (lib.trim (builtins.readFile ./tests/fixtures/master.pub)) ];
+          masterIdentities = [ ./tests/fixtures/master.key ];
+        };
     in
     {
       nixosModules.default = ./nix/module.nix;
@@ -74,6 +99,7 @@
 
       packages = forAllSystems (pkgs: {
         default = pkgs.callPackage ./nix/package.nix { };
+        sops-rekey-test = testApp pkgs;
       });
 
       devShells = forAllSystems (pkgs: {

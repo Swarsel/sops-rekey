@@ -1,0 +1,21 @@
+tests__fixtures__secrets__common.yaml:
+    host1:
+        only: ENC[AES256_GCM,data:v4L/P3dFweSl4A==,iv:xRxgVdSGLlVI5RzMqo0fR951V8/MhJuPPOFmSnQEauM=,tag:OVrB/0uTI/0xfPFWPVa35Q==,type:str]
+tests__fixtures__secrets__generated.yaml:
+    wg:
+        host1: ENC[AES256_GCM,data:6/0RRfz2vlUN/eMvTU3F9fRKoxO/ukgatgPeQAuXi8Ml2ZNDF5RB0bAS9ZE=,iv:DvIOzsKlLZUp12Naud/hfR7xXAMdr+ssiaUTo7FeeJg=,tag:hvPa83n5UYTfPcwZ/hOvow==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBTRHdaQjVxK3RyNnNXSmhL
+            K2g2MkxNc2pnZXhGNzB4SVdCdnE1ZEtDKzJJCnp5RFZlSHBvRTdTVjVyZW1QUUcz
+            OVJtbkRHR2IvUU5LQWRvOUVaNFBSS2MKLS0tIHoxVjR3TWdneUgxaWtGQWtIU3dZ
+            bHNaeHozcDNVT0JzNXhwUEpOb2I4YjgKv4vgc2k0dYkRTjV5gVvb9yR1jZlnq1KJ
+            QKw1zVMoXkNJkTv9oZGa0G6I03SZbi8QXDUeZsR3WsioYrqE9LvwLw==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1kxgcfpuflvjpu2r0yhvjlk0lvehw08f2v49wtvj2l59gu25d03cq647vlj
+    lastmodified: "2026-11-03T22:54:46Z"
+    mac: ENC[AES256_GCM,data:SW3UaFKb2ma82VDmiUg67lWSFCW7lk3nvbEn4T+jSxBoCRr+tOOSdDvS9Mg7BOGoXPjKoqo1D6+N21BG1dl67fxQGfpPFFxqjXx2m4qJmPV6ezlaCQlAQ5miKScPA6tpqVttErgnzOwMoiEuupuu9t7Jhcf0d8CaQAwH+PwnGeg=,iv:Hk3k94oIDBZAzMsIjv32XUkvEXGCTmPg+pHXp+s1pcg=,tag:/duY53dcPNDCzMnvKulQZQ==,type:str]
+    unencrypted_suffix: _unencrypted
+    version: 3.13.3
