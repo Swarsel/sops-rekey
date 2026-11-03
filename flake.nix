@@ -102,6 +102,13 @@
         sops-rekey-test = testApp pkgs;
       });
 
+      checks = forAllSystems (pkgs: {
+        integration = import ./tests/integration.nix {
+          inherit pkgs self;
+          app = testApp pkgs;
+        };
+      });
+
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
           packages = with pkgs; [
