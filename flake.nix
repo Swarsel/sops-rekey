@@ -102,23 +102,35 @@
         sops-rekey-test = testApp pkgs;
       });
 
-      checks = forAllSystems (pkgs: {
-        integration = import ./tests/integration.nix {
-          inherit pkgs self;
-          app = testApp pkgs;
-        };
-        eval-stale =
-          let
-            stale = testNodes.host1.extendModules {
-              modules = [
-                { sops.rekey.hostPubkey = lib.mkForce (builtins.readFile ./tests/fixtures/host2_ed25519.pub); }
-              ];
-            };
-            result = builtins.tryEval stale.config.system.build.toplevel.drvPath;
-          in
-          assert !result.success;
-          pkgs.runCommand "sops-rekey-eval-stale" { } "touch $out";
-      });
+      checks = forAllSystems (
+        pkgs:
+        {
+          integration = import ./tests/integration.nix {
+            inherit pkgs self;
+            app = testApp pkgs;
+          };
+          eval-stale =
+            let
+              stale = testNodes.host1.extendModules {
+                modules = [
+                  { sops.rekey.hostPubkey = lib.mkForce (builtins.readFile ./tests/fixtures/host2_ed25519.pub); }
+                ];
+              };
+              result = builtins.tryEval stale.config.system.build.toplevel.drvPath;
+            in
+            assert !result.success;
+            pkgs.runCommand "sops-rekey-eval-stale" { } "touch $out";
+        }
+        // lib.optionalAttrs (pkgs.stdenv.hostPlatform.system == "x86_64-linux") {
+          vm = import ./tests/vm.nix {
+            inherit pkgs testHosts;
+            modules = [
+              sops-nix.nixosModules.sops
+              self.nixosModules.default
+            ];
+          };
+        }
+      );
 
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
