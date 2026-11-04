@@ -20,9 +20,13 @@ pub fn find_root() -> Result<PathBuf> {
     )
 }
 
+pub fn hash_bytes(data: &[u8]) -> String {
+    hex(&Sha256::digest(data))
+}
+
 pub fn hash_file(path: &Path) -> Result<Option<String>> {
     match std::fs::read(path) {
-        Ok(d) => Ok(Some(hex(&Sha256::digest(&d)))),
+        Ok(d) => Ok(Some(hash_bytes(&d))),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(e).with_context(|| format!("reading {}", path.display())),
     }

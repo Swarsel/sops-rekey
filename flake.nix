@@ -49,7 +49,10 @@
         mkApp {
           inherit pkgs;
           nodes = testNodes;
-          masterRecipients.age = [ (lib.trim (builtins.readFile ./tests/fixtures/master.pub)) ];
+          masterRecipients.age = map (f: lib.trim (builtins.readFile ./tests/fixtures/${f})) [
+            "master.pub"
+            "extra.pub"
+          ];
           masterIdentities = [ ./tests/fixtures/master.key ];
         };
     in

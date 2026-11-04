@@ -70,7 +70,7 @@ On the hosts:
 Run `sops-rekey <command>` from your flake directory:
 
 - `edit <file>` creates or edits a master file, encrypted to `masterRecipients`.
-- `rekey` rekeys missing secrets and re-encrypts every out-of-date file in `storageDir` for its hosts.
+- `rekey` generates missing secrets and re-encrypts every out-of-date file in `storageDir` for its hosts.
 - `generate [--force] [--tags <tags>] [<secret>...]` (re)generates secrets
-- `update-keys` re-encrypts all master files
+- `update-keys` makes every master file encrypted to exactly `masterRecipients`
 - `check` fails if anything needs generating or rekeying

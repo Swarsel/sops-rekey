@@ -32,6 +32,7 @@ let
       builtins.fromJSON (builtins.readFile file)
     else
       {
+        files = { };
         groups = { };
         secrets = { };
       };
@@ -53,7 +54,7 @@ let
           "its master file ${rl.relPath r.file} does not exist (run `sops-rekey rekey`, or check that it is added to git)"
         else if entry == null then
           "it has not been rekeyed yet"
-        else if entry.masterHash != builtins.hashFile "sha256" r.file then
+        else if (index.files.${rl.relPath r.file} or null) != builtins.hashFile "sha256" r.file then
           "${rl.relPath r.file} changed since the last rekey"
         else if group == null || !(builtins.elem hostPubkey (builtins.attrValues group.hosts)) then
           "its rekeyed file is not encrypted for this host's current pubkey"

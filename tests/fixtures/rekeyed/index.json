@@ -1,56 +1,61 @@
 {
-  "version": 1,
+  "version": 2,
+  "files": {
+    "tests/fixtures/secrets/blob.bin": "dd9e95b1c8212d0214b1f0f45fe5d23d2966f934b4f3b043f51bef8989cb6764",
+    "tests/fixtures/secrets/common.yaml": "600f493627c90fa2d7ee05b566c7e4aac00bdab3aef19efbc9129ff5530c75fa",
+    "tests/fixtures/secrets/generated.yaml": "7d7f5dfd64efe15ee1d29df210ca9fe5a38948092303b81931a894efe5e1ce91"
+  },
   "secrets": {
     "tests__fixtures__secrets__blob.bin": {
       "group": "host2",
-      "masterHash": "047504d2d0912f42933a21a37cf114009e0499364031458d3eeb58c470d8604b"
+      "leafHash": "8f28b2ddd2b41e7bf0ad041bdfe88e4535810e9ab217bb42ae882cfcadc6a303"
     },
     "tests__fixtures__secrets__common.yaml/host1/only": {
       "group": "host1",
-      "masterHash": "3dfb46e2389457d62188f53b5a5c4e5f3319306a764477db30a2526c98025066"
+      "leafHash": "9809933cdd9c823c345ed98544c050dea026885907864f6b9e78b1775d57eb88"
     },
     "tests__fixtures__secrets__common.yaml/shared": {
       "group": "host1+host2",
-      "masterHash": "3dfb46e2389457d62188f53b5a5c4e5f3319306a764477db30a2526c98025066"
+      "leafHash": "f79e793ddff17757a489cfd8b4da44bd5bbc3369d3825b0c76cd1ae3ded2b8f5"
     },
     "tests__fixtures__secrets__generated.yaml/derived": {
       "group": "host1+host2",
-      "masterHash": "0b0cc8a555650803404375de5bbeb4231297b5c2711fd0aa07eba7b3256157d2"
+      "leafHash": "f327ecc54689930d55a8d38e250fd937275f73acb185cf59657c1b767d088e82"
     },
     "tests__fixtures__secrets__generated.yaml/pw": {
       "group": "host1+host2",
-      "masterHash": "0b0cc8a555650803404375de5bbeb4231297b5c2711fd0aa07eba7b3256157d2"
+      "leafHash": "dfbe80eaca5848a450a2e98c4f06203300dc7f093ad00c451f4d2457a16ac853"
     },
     "tests__fixtures__secrets__generated.yaml/wg/host1": {
       "group": "host1",
-      "masterHash": "0b0cc8a555650803404375de5bbeb4231297b5c2711fd0aa07eba7b3256157d2"
+      "leafHash": "824d4743fef6ae27a7b72419fa736914a1ceb33e219e1c752cb8dc57436351a6"
     }
   },
   "groups": {
     "host1": {
       "hosts": {
-        "host1": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIE0COYDo0XFf0itwJnS/ljTJnPdmHI08wPYWdbC9UPFz host1"
+        "host1": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGW5PgK6tDvCgNOpdZRR3p2+1IBh1N0klhRSswTqqBDM host1"
       },
       "recipients": [
-        "age1kxgcfpuflvjpu2r0yhvjlk0lvehw08f2v49wtvj2l59gu25d03cq647vlj"
+        "age13v6wvn38c2q4dy5wmzsel6swa6aht26s90aysqrj9t28dnmhjccq29ze2j"
       ]
     },
     "host1+host2": {
       "hosts": {
-        "host1": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIE0COYDo0XFf0itwJnS/ljTJnPdmHI08wPYWdbC9UPFz host1",
-        "host2": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBpr5Zv13d39R4yQNFpkUTH2tXdrUAOxHO1E+NMCet+3 host2"
+        "host1": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGW5PgK6tDvCgNOpdZRR3p2+1IBh1N0klhRSswTqqBDM host1",
+        "host2": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAID+8iPhwqVZNnCyea+MS1M7iEZr4JJFMYj4llBagozf3 host2"
       },
       "recipients": [
-        "age1kxgcfpuflvjpu2r0yhvjlk0lvehw08f2v49wtvj2l59gu25d03cq647vlj",
-        "age1j8yzhnn32nnnt2mnkl4wsj68zsdfg2hjuyle6gag72mexrx3epeshw02xh"
+        "age13v6wvn38c2q4dy5wmzsel6swa6aht26s90aysqrj9t28dnmhjccq29ze2j",
+        "age1fv8z6t382w66d9vyq4fx39sj2j9vge3ypsafq48hhmqpt584afkq5u54s6"
       ]
     },
     "host2": {
       "hosts": {
-        "host2": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBpr5Zv13d39R4yQNFpkUTH2tXdrUAOxHO1E+NMCet+3 host2"
+        "host2": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAID+8iPhwqVZNnCyea+MS1M7iEZr4JJFMYj4llBagozf3 host2"
       },
       "recipients": [
-        "age1j8yzhnn32nnnt2mnkl4wsj68zsdfg2hjuyle6gag72mexrx3epeshw02xh"
+        "age1fv8z6t382w66d9vyq4fx39sj2j9vge3ypsafq48hhmqpt584afkq5u54s6"
       ]
     }
   }

@@ -1,4 +1,7 @@
-use std::path::Path;
+use std::ffi::OsStr;
+use std::io::Write;
+use std::os::unix::fs::OpenOptionsExt;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use anyhow::{anyhow, bail, Context, Result};
@@ -81,8 +84,12 @@ impl Sops {
     }
 
     fn cmd(&self) -> Command {
+        self.cmd_with_config(OsStr::new("/dev/null"))
+    }
+
+    fn cmd_with_config(&self, config: &OsStr) -> Command {
         let mut c = Command::new("sops");
-        c.arg("--config").arg("/dev/null");
+        c.arg("--config").arg(config);
         if let Some(k) = &self.age_key {
             c.env("SOPS_AGE_KEY", k);
         }
@@ -149,6 +156,57 @@ impl Sops {
         Ok(())
     }
 
+    pub fn edit_scripted(&self, path: &Path, plaintext: &[u8]) -> Result<()> {
+        let content = scratch_file("buffer", plaintext)?;
+        let exe = std::env::current_exe().context("locating sops-rekey")?;
+        let editor = format!(
+            "{} write-buffer {}",
+            shell_quote(&exe.to_string_lossy()),
+            shell_quote(&content.to_string_lossy())
+        );
+        let status = self
+            .cmd()
+            .arg("edit")
+            .env("SOPS_EDITOR", &editor)
+            .env("EDITOR", &editor)
+            .arg(path)
+            .status();
+        let _ = std::fs::remove_file(&content);
+        let status = status.context("running sops")?;
+        if !status.success() && status.code() != Some(200) {
+            bail!("sops edit failed for {}", path.display());
+        }
+        Ok(())
+    }
+
+    pub fn update_keys(&self, path: &Path, recipients: &Recipients) -> Result<()> {
+        let mut rule = String::from("creation_rules:\n  - {}\n");
+        if !recipients.pgp.is_empty() {
+            rule = rule.replace(
+                "{}",
+                &format!("pgp: \"{}\"\n    {{}}", recipients.pgp.join(",")),
+            );
+        }
+        if !recipients.age.is_empty() {
+            rule = rule.replace(
+                "{}",
+                &format!("age: \"{}\"\n    {{}}", recipients.age.join(",")),
+            );
+        }
+        let config = scratch_file("config", rule.replace("\n    {}", "").as_bytes())?;
+        let status = self
+            .cmd_with_config(config.as_os_str())
+            .arg("updatekeys")
+            .arg("--yes")
+            .arg(path)
+            .status();
+        let _ = std::fs::remove_file(&config);
+        if !status.context("running sops")?.success() {
+            bail!("sops updatekeys failed for {}", path.display());
+        }
+        Ok(())
+    }
+
     pub fn rotate(&self, path: &Path, add: &Recipients, rm: &Recipients) -> Result<()> {
         let mut cmd = self.cmd();
         cmd.arg("rotate").arg("--in-place");
@@ -168,6 +226,23 @@ impl Sops {
         }
         Ok(())
     }
+}
+
+fn scratch_file(kind: &str, data: &[u8]) -> Result<PathBuf> {
+    let path = std::env::temp_dir().join(format!("sops-rekey-{kind}-{}", std::process::id()));
+    let mut f = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(&path)
+        .with_context(|| format!("creating {}", path.display()))?;
+    f.write_all(data)?;
+    Ok(path)
+}
+
+fn shell_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
 }
 
 pub fn read_structure(path: &Path, format: Format) -> Result<Option<Value>> {
@@ -336,5 +411,10 @@ mod tests {
     #[test]
     fn fingerprints() {
         assert_eq!(normalize_fp("abcd 1234"), "ABCD1234");
+    }
+
+    #[test]
+    fn quoting() {
+        assert_eq!(shell_quote("/a b/c'd"), "'/a b/c'\\''d'");
     }
 }

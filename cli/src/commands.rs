@@ -7,7 +7,7 @@ use serde_json::Value;
 
 use crate::graph;
 use crate::identities;
-use crate::index::{Desired, Index, IndexGroup, IndexSecret, INDEX_FILE};
+use crate::index::{Desired, Index, IndexGroup, IndexSecret, INDEX_FILE, INDEX_VERSION};
 use crate::manifest::Manifest;
 use crate::sops::{self, EncryptOpts, Format, Recipients, Sops};
 use crate::tree;
@@ -23,6 +23,12 @@ pub struct Repo {
 struct Plain {
     trees: BTreeMap<String, Value>,
     dirty: BTreeSet<String>,
+}
+
+#[derive(Default)]
+struct Hashes {
+    files: BTreeMap<String, Option<String>>,
+    leaves: BTreeMap<String, Option<String>>,
 }
 
 impl Plain {
@@ -192,7 +198,7 @@ impl Repo {
             return Ok(());
         }
         let recipients = self.master_recipients()?;
-        let sops = Sops::new(None);
+        let sops = Sops::new(identities::load(&self.m.master_identities)?);
         for file in &plain.dirty {
             let fmt = Format::from_path(file);
             if matches!(fmt, Format::Dotenv | Format::Ini) {
@@ -202,28 +208,38 @@ impl Repo {
                 );
             }
             let path = self.path(file);
-            let opts = if path.exists() {
-                let md = sops::metadata(&path, fmt)?;
-                if !md.foreign_keys.is_empty() || md.key_groups || md.mac_only_encrypted {
-                    bail!(
-                        "cannot rewrite {file}: it uses key groups, mac_only_encrypted or {:?}; \
-                         generators can only write to files encrypted to plain pgp/age recipients",
-                        md.foreign_keys
-                    );
-                }
-                md.opts
-            } else {
-                EncryptOpts::default()
-            };
             let t = &plain.trees[file];
-            let (input, data) = match fmt {
-                Format::Binary => (Format::Binary, tree::get_leaf(t, None)?.into_bytes()),
-                _ => (Format::Json, serde_json::to_vec(t)?),
-            };
-            let name = Path::new(file).file_name().unwrap().to_string_lossy();
-            let out = sops.encrypt(&data, input, fmt, &name, &recipients, &opts)?;
-            util::write_atomic(&path, &out)?;
-            eprintln!("Wrote {file}");
+            if path.exists() && fmt != Format::Binary {
+                let buffer = match fmt {
+                    Format::Json => serde_json::to_vec_pretty(t)?,
+                    _ => serde_yaml_ng::to_string(t)?.into_bytes(),
+                };
+                sops.edit_scripted(&path, &buffer)
+                    .with_context(|| format!("updating {file}"))?;
+                eprintln!("Updated {file}");
+            } else {
+                let opts = if path.exists() {
+                    let md = sops::metadata(&path, fmt)?;
+                    if !md.foreign_keys.is_empty() || md.key_groups || md.mac_only_encrypted {
+                        bail!(
+                            "cannot rewrite {file}: it uses key groups, mac_only_encrypted or {:?}; \
+                             generators can only write to files encrypted to plain pgp/age recipients",
+                            md.foreign_keys
+                        );
+                    }
+                    md.opts
+                } else {
+                    EncryptOpts::default()
+                };
+                let (input, data) = match fmt {
+                    Format::Binary => (Format::Binary, tree::get_leaf(t, None)?.into_bytes()),
+                    _ => (Format::Json, serde_json::to_vec(t)?),
+                };
+                let name = Path::new(file).file_name().unwrap().to_string_lossy();
+                let out = sops.encrypt(&data, input, fmt, &name, &recipients, &opts)?;
+                util::write_atomic(&path, &out)?;
+                eprintln!("Wrote {file}");
+            }
             self.touched.written.push(path);
         }
         for s in self.m.secrets.values() {
@@ -310,8 +326,8 @@ impl Repo {
         desired: &Desired,
         index: &Index,
         storage: &str,
-        hashes: &BTreeMap<String, Option<String>>,
-        rewritten_files: &BTreeSet<String>,
+        hashes: &Hashes,
+        generated: &BTreeSet<String>,
     ) -> Option<String> {
         let Some(ig) = index.groups.get(g) else {
             return Some("new group".into());
@@ -324,12 +340,12 @@ impl Repo {
             return Some("set of secrets changed".into());
         }
         for id in want {
-            let file = &self.m.secrets[id].file;
-            if rewritten_files.contains(file) {
-                return Some(format!("{file} is being regenerated"));
+            if generated.contains(id) {
+                return Some(format!("{id} is being generated"));
             }
-            if index.secrets.get(id).map(|s| Some(&s.master_hash)) != Some(hashes[file].as_ref()) {
-                return Some(format!("{file} changed"));
+            if index.secrets.get(id).map(|s| Some(&s.leaf_hash)) != Some(hashes.leaves[id].as_ref())
+            {
+                return Some(format!("{id} changed"));
             }
         }
         if !self.path(storage).join(format!("{g}.yaml")).exists() {
@@ -338,34 +354,47 @@ impl Repo {
         None
     }
 
-    fn hashes(&self) -> Result<BTreeMap<String, Option<String>>> {
-        let mut out = BTreeMap::new();
-        for s in self.m.secrets.values() {
-            if !out.contains_key(&s.file) {
-                out.insert(s.file.clone(), util::hash_file(&self.path(&s.file))?);
+    fn hashes(&self) -> Result<Hashes> {
+        let mut h = Hashes::default();
+        let mut structures: BTreeMap<&str, Option<Value>> = BTreeMap::new();
+        for (id, s) in &self.m.secrets {
+            if !structures.contains_key(s.file.as_str()) {
+                let path = self.path(&s.file);
+                h.files.insert(s.file.clone(), util::hash_file(&path)?);
+                let st = sops::read_structure(&path, Format::from_path(&s.file))?;
+                structures.insert(&s.file, st);
             }
+            let leaf = structures[s.file.as_str()]
+                .as_ref()
+                .and_then(|st| tree::get_leaf(st, s.key.as_deref()).ok())
+                .map(|ciphertext| util::hash_bytes(ciphertext.as_bytes()));
+            h.leaves.insert(id.clone(), leaf);
         }
-        Ok(out)
+        Ok(h)
     }
 
     fn build_index(
         &self,
         desired: &Desired,
         recipients: &BTreeMap<String, Vec<String>>,
-        hashes: &BTreeMap<String, Option<String>>,
+        hashes: &Hashes,
     ) -> Index {
         Index {
-            version: 1,
+            version: INDEX_VERSION,
+            files: hashes
+                .files
+                .iter()
+                .filter_map(|(f, h)| h.clone().map(|h| (f.clone(), h)))
+                .collect(),
             secrets: desired
                 .secret_group
                 .iter()
                 .map(|(id, g)| {
-                    let file = &self.m.secrets[id].file;
                     (
                         id.clone(),
                         IndexSecret {
                             group: g.clone(),
-                            master_hash: hashes[file].clone().unwrap_or_default(),
+                            leaf_hash: hashes.leaves[id].clone().unwrap_or_default(),
                         },
                     )
                 })
@@ -410,10 +439,7 @@ impl Repo {
             bail!("these secrets don't exist and have no generator; add them with `sops-rekey edit`:\n{}", list.join("\n"));
         }
         let gen_order = self.plan_generation(&missing, false, &missing)?;
-        let rewritten_files: BTreeSet<String> = gen_order
-            .iter()
-            .map(|id| self.m.secrets[id].file.clone())
-            .collect();
+        let generated: BTreeSet<String> = gen_order.iter().cloned().collect();
 
         let desired = Desired::compute(&self.m);
         Self::warn_missing_pubkeys(&desired);
@@ -427,7 +453,7 @@ impl Repo {
             let reason = if force {
                 Some("forced".to_string())
             } else {
-                self.group_staleness(g, &desired, &index, &storage, &hashes, &rewritten_files)
+                self.group_staleness(g, &desired, &index, &storage, &hashes, &generated)
             };
             if let Some(r) = reason {
                 to_write.insert(g.clone(), r);
@@ -637,7 +663,12 @@ impl Repo {
                 [rm.pgp.clone(), rm.age.clone()].concat()
             );
             let path = self.path(&file);
-            sops.rotate(&path, &add, &rm)?;
+            if rm.is_empty() {
+                sops.update_keys(&path, &want)?;
+            } else {
+                eprintln!("    removing a recipient rotates the data key, so every group using {file} will be rekeyed");
+                sops.rotate(&path, &add, &rm)?;
+            }
             self.touched.written.push(path);
         }
         eprintln!("Run `sops-rekey rekey` to refresh the rekeyed files.");

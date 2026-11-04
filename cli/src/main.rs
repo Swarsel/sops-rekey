@@ -10,7 +10,7 @@ mod util;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
@@ -26,7 +26,7 @@ struct Cli {
         env = "SOPS_REKEY_MANIFEST",
         help = "Manifest built by the sops-rekey Nix integration"
     )]
-    manifest: PathBuf,
+    manifest: Option<PathBuf>,
 
     #[arg(
         short = 'a',
@@ -71,10 +71,22 @@ enum Cmd {
     UpdateKeys,
     #[command(about = "Exit non-zero if anything needs generating or rekeying; never decrypts")]
     Check,
+    #[command(
+        hide = true,
+        about = "Editor used by sops-rekey itself to replace a sops edit buffer"
+    )]
+    WriteBuffer { content: PathBuf, buffer: PathBuf },
 }
 
 fn run(cli: Cli) -> Result<bool> {
-    let manifest = manifest::Manifest::load(&cli.manifest)?;
+    if let Cmd::WriteBuffer { content, buffer } = &cli.command {
+        std::fs::write(buffer, std::fs::read(content)?)?;
+        return Ok(true);
+    }
+    let manifest_path = cli
+        .manifest
+        .ok_or_else(|| anyhow!("--manifest (or SOPS_REKEY_MANIFEST) is required"))?;
+    let manifest = manifest::Manifest::load(&manifest_path)?;
     let mut repo = commands::Repo::new(util::find_root()?, manifest);
     let ok = match &cli.command {
         Cmd::Rekey { force } => repo.rekey(*force).map(|_| true),
@@ -86,6 +98,7 @@ fn run(cli: Cli) -> Result<bool> {
         Cmd::Edit { file } => repo.edit(file).map(|_| true),
         Cmd::UpdateKeys => repo.update_keys().map(|_| true),
         Cmd::Check => repo.check(),
+        Cmd::WriteBuffer { .. } => unreachable!(),
     };
     if cli.add_to_git {
         repo.touched.git_add(&repo.root)?;

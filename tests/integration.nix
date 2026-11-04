@@ -48,21 +48,36 @@ pkgs.runCommand "sops-rekey-integration"
     expect "$(get host2 host1+host2 $generated/derived)" "derived-$gen"
     expect "$(get host1 host1 $generated/wg/host1 | wg pubkey)" "$(cat $f/secrets/generated.wg__host1.pub)"
 
-    echo "== editing a master file makes it stale"
+    echo "== editing one secret only rekeys the groups using it"
+    untouched=$(sha256sum $f/rekeyed/host1.yaml $f/rekeyed/host2.yaml)
     master set $f/secrets/common.yaml '["shared"]' '"changed"'
     if sops-rekey check; then echo "FAIL: check passed after edit" >&2; exit 1; fi
     sops-rekey rekey
     sops-rekey check
     expect "$(get host2 host1+host2 $common/shared)" changed
+    expect "$(sha256sum $f/rekeyed/host1.yaml $f/rekeyed/host2.yaml)" "$untouched"
 
-    echo "== forced regeneration cascades to dependents"
+    echo "== forced regeneration cascades to dependents and keeps other leaves"
     wg=$(get host1 host1 $generated/wg/host1)
+    host1_before=$(sha256sum $f/rekeyed/host1.yaml)
     sops-rekey generate --force generated
     sops-rekey rekey
     gen2=$(get host1 host1+host2 $generated/pw)
     [ "$gen2" != "$gen" ] || { echo "FAIL: not regenerated" >&2; exit 1; }
     expect "$(get host1 host1+host2 $generated/derived)" "derived-$gen2"
     expect "$(get host1 host1 $generated/wg/host1)" "$wg"
+    expect "$(sha256sum $f/rekeyed/host1.yaml)" "$host1_before"
+
+    echo "== update-keys adds recipients without re-encrypting leaves"
+    master rotate -i --rm-age "$(cat $f/extra.pub)" $f/secrets/common.yaml
+    sops-rekey rekey
+    groups_before=$(sha256sum $f/rekeyed/*.yaml)
+    sops-rekey update-keys
+    expect "$(grep -c 'recipient: age1' $f/secrets/common.yaml)" 2
+    if sops-rekey check; then echo "FAIL: index not stale after update-keys" >&2; exit 1; fi
+    sops-rekey rekey
+    sops-rekey check
+    expect "$(sha256sum $f/rekeyed/*.yaml)" "$groups_before"
 
     echo "== missing secrets are generated, deleted groups recreated"
     rm -r $f/rekeyed $f/secrets/generated.yaml

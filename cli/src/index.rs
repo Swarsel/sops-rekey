@@ -8,19 +8,32 @@ use sha2::{Digest, Sha256};
 use crate::manifest::Manifest;
 
 pub const INDEX_FILE: &str = "index.json";
+pub const INDEX_VERSION: u32 = 2;
 
-#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Index {
     pub version: u32,
+    pub files: BTreeMap<String, String>,
     pub secrets: BTreeMap<String, IndexSecret>,
     pub groups: BTreeMap<String, IndexGroup>,
+}
+
+impl Default for Index {
+    fn default() -> Self {
+        Index {
+            version: INDEX_VERSION,
+            files: BTreeMap::new(),
+            secrets: BTreeMap::new(),
+            groups: BTreeMap::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct IndexSecret {
     pub group: String,
-    pub master_hash: String,
+    pub leaf_hash: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -31,16 +44,21 @@ pub struct IndexGroup {
 
 impl Index {
     pub fn load(path: &Path) -> Result<Self> {
-        match std::fs::read(path) {
-            Ok(d) => {
-                serde_json::from_slice(&d).with_context(|| format!("parsing {}", path.display()))
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Index {
-                version: 1,
-                ..Default::default()
-            }),
-            Err(e) => Err(e).with_context(|| format!("reading {}", path.display())),
+        let data = match std::fs::read(path) {
+            Ok(d) => d,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Index::default()),
+            Err(e) => return Err(e).with_context(|| format!("reading {}", path.display())),
+        };
+        let ctx = || format!("parsing {}", path.display());
+        let v: serde_json::Value = serde_json::from_slice(&data).with_context(ctx)?;
+        if v.get("version").and_then(serde_json::Value::as_u64) != Some(INDEX_VERSION.into()) {
+            eprintln!(
+                "note: {} has an older format, so every group counts as stale once",
+                path.display()
+            );
+            return Ok(Index::default());
         }
+        serde_json::from_value(v).with_context(ctx)
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
@@ -128,6 +146,26 @@ mod tests {
         let many: BTreeSet<String> = (0..50).map(|i| format!("host-number-{i}")).collect();
         let name = group_name(&many);
         assert!(name.starts_with("group-") && name.len() == 22, "{name}");
+    }
+
+    #[test]
+    fn older_index_counts_as_empty() {
+        let dir = std::env::temp_dir().join(format!("sops-rekey-index-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join(INDEX_FILE);
+        std::fs::write(
+            &p,
+            r#"{"version":1,"secrets":{"a":{"group":"h","masterHash":"x"}},"groups":{}}"#,
+        )
+        .unwrap();
+        assert_eq!(Index::load(&p).unwrap(), Index::default());
+        let current = Index {
+            files: [("s.yaml".to_string(), "h".to_string())].into(),
+            ..Index::default()
+        };
+        std::fs::write(&p, current.to_bytes()).unwrap();
+        assert_eq!(Index::load(&p).unwrap(), current);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
