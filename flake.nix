@@ -127,8 +127,19 @@
           eval-opt-in =
             let
               plain = testNodes.host1.extendModules { modules = [ { sops.secrets.plain = { }; } ]; };
+              all = testNodes.host1.extendModules {
+                modules = [
+                  {
+                    sops.rekey.rekeyAllSecrets = true;
+                    sops.secrets.plain = { };
+                    sops.secrets.excluded.rekey.enable = false;
+                  }
+                ];
+              };
             in
             assert !plain.config.sops.secrets.plain.rekey.enable;
+            assert all.config.sops.secrets.plain.rekey.enable;
+            assert !all.config.sops.secrets.excluded.rekey.enable;
             pkgs.runCommand "sops-rekey-eval-opt-in" { } "touch $out";
           eval-pub-file =
             let

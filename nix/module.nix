@@ -149,6 +149,15 @@ in
         example = lib.literalExpression ''"hosts/''${config.networking.hostName}/"'';
         type = types.str;
       };
+      rekeyAllSecrets = mkOption {
+        default = false;
+        description = ''
+          Rekey every secret that has a master file, as if each one set
+          `rekey`. Individual secrets can still opt out with
+          `rekey.enable = false`.
+        '';
+        type = types.bool;
+      };
       storageDir = mkOption {
         default = null;
         description = ''
@@ -177,13 +186,15 @@ in
               description = ''
                 Rekeying of this secret. Setting it to anything, even `{ }`, makes
                 the secret rekeyed from its master file; secrets without it are
-                left to sops-nix as they are.
+                left to sops-nix as they are unless `sops.rekey.rekeyAllSecrets` is set.
               '';
               type = types.submodule {
                 options = {
                   enable = mkOption {
-                    default = options.rekey.highestPrio < (lib.mkOptionDefault null).priority;
-                    defaultText = lib.literalMD "`true` if `rekey` is set at all";
+                    default =
+                      (cfg.rekeyAllSecrets && r.file != null)
+                      || options.rekey.highestPrio < (lib.mkOptionDefault null).priority;
+                    defaultText = lib.literalMD "`true` if `rekey` is set at all, or if `sops.rekey.rekeyAllSecrets` is set and the secret has a master file";
                     description = "Whether this secret is rekeyed from a master file.";
                     type = types.bool;
                   };
