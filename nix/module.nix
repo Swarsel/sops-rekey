@@ -1,8 +1,8 @@
 {
   config,
   lib,
-  options,
   pkgs,
+  options,
   ...
 }:
 let
@@ -32,8 +32,8 @@ let
       builtins.fromJSON (builtins.readFile file)
     else
       {
-        secrets = { };
         groups = { };
+        secrets = { };
       };
 
   resolve =
@@ -68,175 +68,169 @@ let
   rekeyed = lib.filterAttrs (_: s: s.rekey.enable) config.sops.secrets;
   problems = lib.filterAttrs (_: p: p != null) (lib.mapAttrs (_: s: (resolve s).problem) rekeyed);
 
+  isHomeManager = options ? home;
+
   generatorType = types.submodule {
     options = {
-      script = mkOption {
-        type = types.either types.str (types.functionTo types.str);
-        description = ''
-          Name of a generator in `sops.rekey.generators`, or a function
-          `{ pkgs, lib, name, secret, file, pubFile, decrypt, deps, ... }: "<shell script>"`
-          whose script prints the secret to stdout.
-        '';
-      };
       dependencies = mkOption {
-        type = types.listOf types.unspecified;
         default = [ ];
         description = ''
           Other secrets (e.g. `config.sops.secrets.foo`, or another host's via
           flake outputs) this generator reads using `decrypt`. They are
           generated first, and regenerating them regenerates this secret.
         '';
+        type = types.listOf types.unspecified;
+      };
+      script = mkOption {
+        description = ''
+          Name of a generator in `sops.rekey.generators`, or a function
+          `{ pkgs, lib, name, secret, file, pubFile, decrypt, deps, ... }: "<shell script>"`
+          whose script prints the secret to stdout.
+        '';
+        type = types.either types.str (types.functionTo types.str);
       };
       tags = mkOption {
-        type = types.listOf types.str;
         default = [ ];
         description = "Tags for `sops-rekey generate --tags`.";
+        type = types.listOf types.str;
       };
     };
   };
 in
 {
-  options.sops.rekey = {
-    hostPubkey = mkOption {
-      type = types.nullOr (types.either types.str types.path);
-      default = null;
-      example = "ssh-ed25519 AAAAC3Nza...";
-      description = ''
-        Public key this host decrypts its secrets with: an age recipient, an
-        `ssh-ed25519` public key (converted with ssh-to-age, matching sops-nix's
-        `sops.age.sshKeyPaths`), or a path to a file containing one.
-      '';
+  options.sops = {
+    rekey = {
+      allowMissingPubkey = mkOption {
+        default = true;
+        description = ''
+          If `hostPubkey` is unset, warn and give this host no rekeyed secrets
+          (for bootstrapping) instead of failing evaluation.
+        '';
+        type = types.bool;
+      };
+      generators = mkOption {
+        default = { };
+        description = "Named generators usable as `rekey.generator.script = \"<name>\"`.";
+        type = types.attrsOf (types.functionTo types.str);
+      };
+      hostPubkey = mkOption {
+        default = null;
+        description = ''
+          Public key this host decrypts its secrets with: an age recipient, an
+          `ssh-ed25519` public key (converted with ssh-to-age, matching sops-nix's
+          `sops.age.sshKeyPaths`), or a path to a file containing one.
+        '';
+        example = "ssh-ed25519 AAAAC3Nza...";
+        type = types.nullOr (types.either types.str types.path);
+      };
+      hostPubkeyString = mkOption {
+        default = hostPubkey;
+        internal = true;
+        readOnly = true;
+        type = types.nullOr types.str;
+      };
+      storageDir = mkOption {
+        default = null;
+        description = ''
+          Directory inside the flake holding the rekeyed group files and
+          `index.json`. Must be the same for all hosts.
+        '';
+        example = lib.literalExpression "./rekeyed";
+        type = types.nullOr types.path;
+      };
     };
+    secrets = mkOption {
+      type = types.attrsOf (
+        types.submodule (
+          { name, config, ... }:
+          let
+            r = config.rekey;
+          in
+          {
+            options.rekey = {
+              enable = mkOption {
+                default = r.file != null;
+                defaultText = lib.literalExpression "rekey.file != null";
+                description = "Whether this secret is rekeyed from a master file.";
+                type = types.bool;
+              };
+              __toString = mkOption {
+                default = _: "sops-rekey";
+                internal = true;
+                readOnly = true;
+                type = types.unspecified;
+              };
+              file = mkOption {
+                default = defaultMasterFile;
+                defaultText = lib.literalExpression "config.sops.defaultSopsFile";
+                description = ''
+                  Master file containing this secret (inside the flake). Defaults to
+                  `sops.defaultSopsFile`, so with it set every secret is rekeyed
+                  unless it sets `rekey.enable = false`.
+                '';
+                type = types.nullOr types.path;
+              };
+              generator = mkOption {
+                default = null;
+                description = "How to generate this secret if it does not exist.";
+                type = types.nullOr generatorType;
+              };
+              id = mkOption {
+                default = rl.secretId r.file r.key;
+                defaultText = lib.literalMD "derived from `file` and `key`";
+                description = "Identifier of the master secret, shared by all hosts using it.";
+                readOnly = true;
+                type = types.str;
+              };
+              key = mkOption {
+                default = if r.file != null && rl.isBinary r.file then null else name;
+                defaultText = lib.literalMD "the secret's name, or `null` for binary master files";
+                description = "`/`-separated key path in the master file; `null` for the whole (binary) file.";
+                type = types.nullOr types.str;
+              };
+              pubFile = mkOption {
+                default = rl.pubFile r.file r.key;
+                defaultText = lib.literalMD "`<dir>/<stem>.<key>.pub` next to the master file";
+                description = ''
+                  Public part written by generators such as `ssh-ed25519` or
+                  `wireguard`; read it with `builtins.readFile`.
+                '';
+                readOnly = true;
+                type = types.path;
+              };
+            };
 
-    allowMissingPubkey = mkOption {
-      type = types.bool;
-      default = true;
-      description = ''
-        If `hostPubkey` is unset, warn and give this host no rekeyed secrets
-        (for bootstrapping) instead of failing evaluation.
-      '';
+            config = lib.mkIf r.enable {
+              format = "yaml";
+              key = r.id;
+              sopsFile =
+                if hostPubkey != null && (resolve config).problem == null then
+                  (resolve config).file
+                else
+                  placeholder;
+            };
+          }
+        )
+      );
     };
-
-    storageDir = mkOption {
-      type = types.nullOr types.path;
-      default = null;
-      example = lib.literalExpression "./rekeyed";
-      description = ''
-        Directory inside the flake holding the rekeyed group files and
-        `index.json`. Must be the same for all hosts.
-      '';
-    };
-
-    generators = mkOption {
-      type = types.attrsOf (types.functionTo types.str);
-      default = { };
-      description = "Named generators usable as `rekey.generator.script = \"<name>\"`.";
-    };
-
-    hostPubkeyString = mkOption {
-      type = types.nullOr types.str;
-      internal = true;
-      readOnly = true;
-      default = hostPubkey;
-    };
-  };
-
-  options.sops.secrets = mkOption {
-    type = types.attrsOf (
-      types.submodule (
-        { name, config, ... }:
-        let
-          r = config.rekey;
-        in
-        {
-          options.rekey = {
-            enable = mkOption {
-              type = types.bool;
-              default = r.file != null;
-              defaultText = lib.literalExpression "rekey.file != null";
-              description = "Whether this secret is rekeyed from a master file.";
-            };
-            file = mkOption {
-              type = types.nullOr types.path;
-              default = defaultMasterFile;
-              defaultText = lib.literalExpression "config.sops.defaultSopsFile";
-              description = ''
-                Master file containing this secret (inside the flake). Defaults to
-                `sops.defaultSopsFile`, so with it set every secret is rekeyed
-                unless it sets `rekey.enable = false`.
-              '';
-            };
-            key = mkOption {
-              type = types.nullOr types.str;
-              default = if r.file != null && rl.isBinary r.file then null else name;
-              defaultText = lib.literalMD "the secret's name, or `null` for binary master files";
-              description = "`/`-separated key path in the master file; `null` for the whole (binary) file.";
-            };
-            generator = mkOption {
-              type = types.nullOr generatorType;
-              default = null;
-              description = "How to generate this secret if it does not exist.";
-            };
-            id = mkOption {
-              type = types.str;
-              readOnly = true;
-              default = rl.secretId r.file r.key;
-              defaultText = lib.literalMD "derived from `file` and `key`";
-              description = "Identifier of the master secret, shared by all hosts using it.";
-            };
-            pubFile = mkOption {
-              type = types.path;
-              readOnly = true;
-              default = rl.pubFile r.file r.key;
-              defaultText = lib.literalMD "`<dir>/<stem>.<key>.pub` next to the master file";
-              description = ''
-                Public part written by generators such as `ssh-ed25519` or
-                `wireguard`; read it with `builtins.readFile`.
-              '';
-            };
-            __toString = mkOption {
-              type = types.unspecified;
-              internal = true;
-              readOnly = true;
-              default = _: "sops-rekey";
-            };
-          };
-
-          config = lib.mkIf r.enable {
-            sopsFile =
-              if hostPubkey != null && (resolve config).problem == null then
-                (resolve config).file
-              else
-                placeholder;
-            key = r.id;
-            format = "yaml";
-          };
-        }
-      )
-    );
   };
 
   config = {
-    sops.rekey.generators = lib.mapAttrs (_: lib.mkDefault) (import ./generators.nix);
-
-    sops.validateSopsFiles = lib.mkIf (hostPubkey == null && rekeyed != { }) (lib.mkDefault false);
-
-    warnings = lib.optional (hostPubkey == null && rekeyed != { } && cfg.allowMissingPubkey) ''
-      sops-rekey: sops.rekey.hostPubkey is not set, so this host gets none of its
-      ${toString (builtins.length (builtins.attrNames rekeyed))} rekeyed secrets. Set it and run `sops-rekey rekey`.
-    '';
-
+    sops = {
+      rekey.generators = lib.mapAttrs (_: lib.mkDefault) (import ./generators.nix);
+      validateSopsFiles = lib.mkIf (hostPubkey == null && rekeyed != { }) (lib.mkDefault false);
+    };
     assertions = [
       {
         assertion = options.sops ? defaultSopsFile;
-        message = "sops-rekey: import the sops-nix NixOS module as well.";
+        message = "sops-rekey: import the sops-nix module as well.";
       }
       {
         assertion = hostPubkey != null || cfg.allowMissingPubkey || rekeyed == { };
         message = "sops-rekey: sops.rekey.hostPubkey must be set (allowMissingPubkey is false).";
       }
       {
-        assertion = hostPubkey == null || problems == { };
+        assertion = isHomeManager || hostPubkey == null || problems == { };
         message =
           "sops-rekey: some secrets are out of date, run `sops-rekey rekey` (and `git add` the results):\n"
           + lib.concatStringsSep "\n" (lib.mapAttrsToList (n: p: "  - ${n}: ${p}") problems);
@@ -246,5 +240,9 @@ in
       assertion = s.rekey.generator == null || s.rekey.enable;
       message = "sops-rekey: sops.secrets.${n} has a generator but is not rekeyed (set rekey.file).";
     }) config.sops.secrets;
+    warnings = lib.optional (hostPubkey == null && rekeyed != { } && cfg.allowMissingPubkey) ''
+      sops-rekey: sops.rekey.hostPubkey is not set, so this host gets none of its
+      ${toString (builtins.length (builtins.attrNames rekeyed))} rekeyed secrets. Set it and run `sops-rekey rekey`.
+    '';
   };
 }

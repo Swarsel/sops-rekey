@@ -55,6 +55,7 @@
     in
     {
       nixosModules.default = ./nix/module.nix;
+      homeManagerModules.default = ./nix/module.nix;
       flakeModules.default = ./nix/flake-module.nix;
       flakeModule = self.flakeModules.default;
 
