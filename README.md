@@ -50,46 +50,35 @@ With flake-parts:
 }
 ```
 
+
+## Usage
+
 On the hosts:
 
 ```nix
 {
-  sops.defaultSopsFile = ./secrets/common.yaml;
-  sops.rekey = {
-    hostPubkey = "ssh-ed25519 AAAA...";
-    storageDir = ./rekeyed;
-  };
+  sops = {
 
-  sops.secrets.db-password = { };
-  sops.secrets.wg-key.rekey.generator.script = "wireguard";
-}
-```
+    defaultSopsFile = ./secrets/common.yaml;
+    rekey = {
+      hostPubkey = "ssh-ed25519 AAAA...";
+      storageDir = ./rekeyed;
+    };
 
-## Usage
-
-### Generators
-
-`sops-rekey` enables you to declare a generation mechanism for secrets:
-
-```nix
-{
-  sops.secrets.db-password.rekey.generator = {
-    script = "alnum";
-    args.length = 16;
-  };
-  sops.secrets.db-password-hash.rekey.generator = {
-    dependencies = [ config.sops.secrets.db-password ];
-    script = "bcrypt";
+    secrets = {
+      normalSecret = { };
+      defaultRekeyedSecret.rekey = { key = "rekeyedSecret"; };
+      rekeyedSecret.rekey = { file = ./secrets/local.yaml; };
+      generatedSecret.rekey.generator.script = "wireguard";
+    };
   };
 }
 ```
 
-### CLI
+In the above example, as soon as `nix run .#sops-rekey -- rekey` is called (this is preferable as it will automatically build and pick the correct manifest):
+- `normalSecret` is not touched by this module
+- `defaultRekeyedSecret` looks for a key called `rekeyedSecret` in `./secrets/common.yaml`
+- `rekeyedSecret` looks for a key called `rekeyedSecret` in `./secrets/local.yaml`.
+- `generatedSecret` generates (only when missing) a WireGuard private key into `generatedSecret` in `./secrets/common.yaml` and writes the matching public key to `./secrets/common/generatedSecret.pub`. Also see the [complete set of generators](https://github.com/Swarsel/sops-rekey/blob/main/nix/generators.nix).
 
-Run `sops-rekey <command>` from your flake directory:
-
-- `edit <file>` creates or edits a master file, encrypted to `masterRecipients`.
-- `rekey` generates missing secrets and re-encrypts every out-of-date file in `storageDir` for its hosts.
-- `generate [--force] [--tags <tags>] [<secret>...]` (re)generates secrets
-- `update-keys` makes every master file encrypted to exactly `masterRecipients`
-- `check` fails if anything needs generating or rekeying
+All of the above "managed" secrets are then rekeyed  into `./rekeyed/<name>.yaml`. `<name>` is the hostnames that use this secret, concatenated with `+`.

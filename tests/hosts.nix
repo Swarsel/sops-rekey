@@ -52,7 +52,7 @@ in
   host1 = {
     imports = [ (common "host1") ];
     sops.secrets = {
-      only = { };
+      only.rekey = { };
       wg.rekey = {
         file = fixtures + "/secrets/generated.yaml";
         key = "wg/host1";

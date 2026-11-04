@@ -50,6 +50,8 @@ let
       problem =
         if cfg.storageDir == null then
           "sops.rekey.storageDir is not set"
+        else if r.file == null then
+          "it has no master file (set rekey.file or sops.defaultSopsFile)"
         else if !builtins.pathExists r.file then
           "its master file ${rl.relPath r.file} does not exist (run `sops-rekey rekey`, or check that it is added to git)"
         else if entry == null then
@@ -160,67 +162,78 @@ in
     secrets = mkOption {
       type = types.attrsOf (
         types.submodule (
-          { name, config, ... }:
+          {
+            name,
+            config,
+            options,
+            ...
+          }:
           let
             r = config.rekey;
           in
           {
-            options.rekey = {
-              enable = mkOption {
-                default = r.file != null;
-                defaultText = lib.literalExpression "rekey.file != null";
-                description = "Whether this secret is rekeyed from a master file.";
-                type = types.bool;
-              };
-              __toString = mkOption {
-                default = _: "sops-rekey";
-                internal = true;
-                readOnly = true;
-                type = types.unspecified;
-              };
-              file = mkOption {
-                default = defaultMasterFile;
-                defaultText = lib.literalExpression "config.sops.defaultSopsFile";
-                description = ''
-                  Master file containing this secret (inside the flake). Defaults to
-                  `sops.defaultSopsFile`, so with it set every secret is rekeyed
-                  unless it sets `rekey.enable = false`.
-                '';
-                type = types.nullOr types.path;
-              };
-              generator = mkOption {
-                default = null;
-                description = "How to generate this secret if it does not exist.";
-                type = types.nullOr generatorType;
-              };
-              id = mkOption {
-                default = rl.secretId r.file r.key;
-                defaultText = lib.literalMD "derived from `file` and `key`";
-                description = "Identifier of the master secret, shared by all hosts using it.";
-                readOnly = true;
-                type = types.str;
-              };
-              key = mkOption {
-                default = if r.file != null && rl.isBinary r.file then null else r.keyPrefix + name;
-                defaultText = lib.literalMD "`rekey.keyPrefix` + the secret's name, or `null` for binary master files";
-                description = "`/`-separated key path in the master file; `null` for the whole (binary) file.";
-                type = types.nullOr types.str;
-              };
-              keyPrefix = mkOption {
-                default = cfg.keyPrefix;
-                defaultText = lib.literalExpression "config.sops.rekey.keyPrefix";
-                description = "Prefix of the default `rekey.key`, for secrets living in another namespace of the master file.";
-                type = types.str;
-              };
-              pubFile = mkOption {
-                default = rl.pubFile r.file r.key;
-                defaultText = lib.literalMD "`<dir>/<stem>/<key>.pub` next to the master file (`<dir>/<stem>.pub` for binary files)";
-                description = ''
-                  Public part written by generators such as `ssh-ed25519` or
-                  `wireguard`; read it with `builtins.readFile`.
-                '';
-                readOnly = true;
-                type = types.path;
+            options.rekey = mkOption {
+              default = { };
+              description = ''
+                Rekeying of this secret. Setting it to anything, even `{ }`, makes
+                the secret rekeyed from its master file; secrets without it are
+                left to sops-nix as they are.
+              '';
+              type = types.submodule {
+                options = {
+                  enable = mkOption {
+                    default = options.rekey.highestPrio < (lib.mkOptionDefault null).priority;
+                    defaultText = lib.literalMD "`true` if `rekey` is set at all";
+                    description = "Whether this secret is rekeyed from a master file.";
+                    type = types.bool;
+                  };
+                  __toString = mkOption {
+                    default = _: "sops-rekey";
+                    internal = true;
+                    readOnly = true;
+                    type = types.unspecified;
+                  };
+                  file = mkOption {
+                    default = defaultMasterFile;
+                    defaultText = lib.literalExpression "config.sops.defaultSopsFile";
+                    description = "Master file containing this secret (inside the flake).";
+                    type = types.nullOr types.path;
+                  };
+                  generator = mkOption {
+                    default = null;
+                    description = "How to generate this secret if it does not exist.";
+                    type = types.nullOr generatorType;
+                  };
+                  id = mkOption {
+                    default = rl.secretId r.file r.key;
+                    defaultText = lib.literalMD "derived from `file` and `key`";
+                    description = "Identifier of the master secret, shared by all hosts using it.";
+                    readOnly = true;
+                    type = types.str;
+                  };
+                  key = mkOption {
+                    default = if r.file != null && rl.isBinary r.file then null else r.keyPrefix + name;
+                    defaultText = lib.literalMD "`rekey.keyPrefix` + the secret's name, or `null` for binary master files";
+                    description = "`/`-separated key path in the master file; `null` for the whole (binary) file.";
+                    type = types.nullOr types.str;
+                  };
+                  keyPrefix = mkOption {
+                    default = cfg.keyPrefix;
+                    defaultText = lib.literalExpression "config.sops.rekey.keyPrefix";
+                    description = "Prefix of the default `rekey.key`, for secrets living in another namespace of the master file.";
+                    type = types.str;
+                  };
+                  pubFile = mkOption {
+                    default = rl.pubFile r.file r.key;
+                    defaultText = lib.literalMD "`<dir>/<stem>/<key>.pub` next to the master file (`<dir>/<stem>.pub` for binary files)";
+                    description = ''
+                      Public part written by generators such as `ssh-ed25519` or
+                      `wireguard`; read it with `builtins.readFile`.
+                    '';
+                    readOnly = true;
+                    type = types.path;
+                  };
+                };
               };
             };
 
@@ -262,7 +275,7 @@ in
     ]
     ++ lib.mapAttrsToList (n: s: {
       assertion = s.rekey.generator == null || s.rekey.enable;
-      message = "sops-rekey: sops.secrets.${n} has a generator but is not rekeyed (set rekey.file).";
+      message = "sops-rekey: sops.secrets.${n} has a generator but sets rekey.enable = false.";
     }) config.sops.secrets;
     warnings = lib.optional (hostPubkey == null && rekeyed != { } && cfg.allowMissingPubkey) ''
       sops-rekey: sops.rekey.hostPubkey is not set, so this host gets none of its

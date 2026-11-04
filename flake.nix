@@ -124,6 +124,12 @@
             in
             assert !result.success;
             pkgs.runCommand "sops-rekey-eval-stale" { } "touch $out";
+          eval-opt-in =
+            let
+              plain = testNodes.host1.extendModules { modules = [ { sops.secrets.plain = { }; } ]; };
+            in
+            assert !plain.config.sops.secrets.plain.rekey.enable;
+            pkgs.runCommand "sops-rekey-eval-opt-in" { } "touch $out";
         }
         // lib.optionalAttrs (pkgs.stdenv.hostPlatform.system == "x86_64-linux") {
           vm = import ./tests/vm.nix {

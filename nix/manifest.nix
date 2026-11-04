@@ -15,7 +15,16 @@ let
   '';
 
   participating = lib.filterAttrs (_: n: n.config ? sops && n.config.sops ? rekey) nodes;
-  rekeyedSecrets = node: lib.filterAttrs (_: s: s.rekey.enable) node.config.sops.secrets;
+  rekeyedSecrets =
+    hostName: node:
+    lib.filterAttrs (
+      name: s:
+      s.rekey.enable
+      &&
+        lib.throwIf (s.rekey.file == null)
+          "sops-rekey: ${hostName}.sops.secrets.${name} is rekeyed but has no master file (set rekey.file or sops.defaultSopsFile)"
+          true
+    ) node.config.sops.secrets;
 
   generatorEntry =
     hostName: node: name: s:
@@ -58,7 +67,7 @@ let
         inherit (s.rekey) key;
         pubFile = rl.relPath s.rekey.pubFile;
         generators = lib.optional (s.rekey.generator != null) (generatorEntry hostName node name s);
-      }) (rekeyedSecrets node)
+      }) (rekeyedSecrets hostName node)
     ) participating
   );
 in
@@ -69,14 +78,14 @@ in
     age = masterRecipients.age or [ ];
   };
   masterIdentities = map toString masterIdentities;
-  hosts = lib.mapAttrs (_: node: {
+  hosts = lib.mapAttrs (hostName: node: {
     pubkey = node.config.sops.rekey.hostPubkeyString;
     storageDir =
       let
         d = node.config.sops.rekey.storageDir;
       in
       if d == null then null else rl.relPath d;
-    secrets = lib.mapAttrs (_: s: s.rekey.id) (rekeyedSecrets node);
+    secrets = lib.mapAttrs (_: s: s.rekey.id) (rekeyedSecrets hostName node);
   }) participating;
   secrets = lib.mapAttrs (
     _: es:
