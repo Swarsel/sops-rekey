@@ -34,6 +34,7 @@ let
           name
           decrypt
           ;
+        inherit (g) args;
         secret = s;
         file = rl.relPath s.rekey.file;
         pubFile = rl.relPath s.rekey.pubFile;

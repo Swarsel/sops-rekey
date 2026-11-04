@@ -20,7 +20,18 @@ let
         generated.rekey = {
           file = fixtures + "/secrets/generated.yaml";
           key = "pw";
-          generator.script = "alnum";
+          generator = {
+            args.length = 16;
+            script = "alnum";
+          };
+        };
+        hashed.rekey = {
+          file = fixtures + "/secrets/generated.yaml";
+          keyPrefix = "";
+          generator = {
+            dependencies = [ config.sops.secrets.generated ];
+            script = "bcrypt";
+          };
         };
         derived.rekey = {
           file = fixtures + "/secrets/generated.yaml";

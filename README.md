@@ -67,6 +67,25 @@ On the hosts:
 
 ## Usage
 
+### Generators
+
+`sops-rekey` enables you to declare a generation mechanism for secrets:
+
+```nix
+{
+  sops.secrets.db-password.rekey.generator = {
+    script = "alnum";
+    args.length = 16;
+  };
+  sops.secrets.db-password-hash.rekey.generator = {
+    dependencies = [ config.sops.secrets.db-password ];
+    script = "bcrypt";
+  };
+}
+```
+
+### CLI
+
 Run `sops-rekey <command>` from your flake directory:
 
 - `edit <file>` creates or edits a master file, encrypted to `masterRecipients`.

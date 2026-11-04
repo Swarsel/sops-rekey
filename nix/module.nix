@@ -73,6 +73,14 @@ let
 
   generatorType = types.submodule {
     options = {
+      args = mkOption {
+        default = { };
+        description = ''
+          Passed to the generator function as `args`. The built-in `alnum`,
+          `hex`, `base64` and `base64url` read `length` from it.
+        '';
+        type = types.attrsOf types.anything;
+      };
       dependencies = mkOption {
         default = [ ];
         description = ''
@@ -85,7 +93,7 @@ let
       script = mkOption {
         description = ''
           Name of a generator in `sops.rekey.generators`, or a function
-          `{ pkgs, lib, name, secret, file, pubFile, decrypt, deps, ... }: "<shell script>"`
+          `{ pkgs, lib, name, secret, file, pubFile, decrypt, deps, args, ... }: "<shell script>"`
           whose script prints the secret to stdout.
         '';
         type = types.either types.str (types.functionTo types.str);

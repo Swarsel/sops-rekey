@@ -7,6 +7,7 @@ pkgs.runCommand "sops-rekey-integration"
   {
     nativeBuildInputs = [
       app
+      pkgs.mkpasswd
       pkgs.sops
       pkgs.ssh-to-age
       pkgs.wireguard-tools
@@ -44,8 +45,10 @@ pkgs.runCommand "sops-rekey-integration"
 
     echo "== generators"
     gen=$(get host1 host1+host2 $generated/pw)
-    expect "''${#gen}" 48
+    expect "''${#gen}" 16
     expect "$(get host2 host1+host2 $generated/derived)" "derived-$gen"
+    hashed=$(get host2 host1+host2 $generated/hashed)
+    expect "$(mkpasswd -m bcrypt -S "''${hashed:7:22}" "$gen")" "$hashed"
     expect "$(get host1 host1 $generated/wg/host1 | wg pubkey)" "$(cat $f/secrets/generated/wg/host1.pub)"
 
     echo "== editing one secret only rekeys the groups using it"

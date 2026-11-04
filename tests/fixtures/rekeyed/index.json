@@ -3,7 +3,7 @@
   "files": {
     "tests/fixtures/secrets/blob.bin": "dd9e95b1c8212d0214b1f0f45fe5d23d2966f934b4f3b043f51bef8989cb6764",
     "tests/fixtures/secrets/common.yaml": "600f493627c90fa2d7ee05b566c7e4aac00bdab3aef19efbc9129ff5530c75fa",
-    "tests/fixtures/secrets/generated.yaml": "7d7f5dfd64efe15ee1d29df210ca9fe5a38948092303b81931a894efe5e1ce91"
+    "tests/fixtures/secrets/generated.yaml": "5d95ec222d382d975496d354abfe4307bd18a226a5f9bcfc9fdc805d41c045d3"
   },
   "secrets": {
     "tests__fixtures__secrets__blob.bin": {
@@ -20,15 +20,19 @@
     },
     "tests__fixtures__secrets__generated.yaml/derived": {
       "group": "host1+host2",
-      "leafHash": "f327ecc54689930d55a8d38e250fd937275f73acb185cf59657c1b767d088e82"
+      "leafHash": "405b6e68492eb05b429dd300bc4814c832ab4375b9c1475cc4f5ea5eb106d873"
+    },
+    "tests__fixtures__secrets__generated.yaml/hashed": {
+      "group": "host1+host2",
+      "leafHash": "86a105e85b5cae1d02e666285ad8facd83bd3e14dc04ed48848316e7196308af"
     },
     "tests__fixtures__secrets__generated.yaml/pw": {
       "group": "host1+host2",
-      "leafHash": "dfbe80eaca5848a450a2e98c4f06203300dc7f093ad00c451f4d2457a16ac853"
+      "leafHash": "0e23a2f29e8cd91985142af97a8dbec82f2aa3189ee528d39bc29ca2c8644afb"
     },
     "tests__fixtures__secrets__generated.yaml/wg/host1": {
       "group": "host1",
-      "leafHash": "824d4743fef6ae27a7b72419fa736914a1ceb33e219e1c752cb8dc57436351a6"
+      "leafHash": "187d61fb41bbde6f44ad5bdd11ed789409c5677a9efb17ea20d960a4dc7b916a"
     }
   },
   "groups": {

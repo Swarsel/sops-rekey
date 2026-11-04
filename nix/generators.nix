@@ -1,26 +1,44 @@
 {
   alnum =
-    { pkgs, ... }:
+    { pkgs, args, ... }:
     ''
-      ${pkgs.coreutils}/bin/tr -dc '[:alnum:]' < /dev/urandom | ${pkgs.coreutils}/bin/head -c 48
+      ${pkgs.coreutils}/bin/tr -dc '[:alnum:]' < /dev/urandom | ${pkgs.coreutils}/bin/head -c ${toString (args.length or 48)}
     '';
 
   base64 =
-    { pkgs, ... }:
+    { pkgs, args, ... }:
     ''
-      ${pkgs.openssl}/bin/openssl rand -base64 32 | ${pkgs.coreutils}/bin/tr -d '\n'
+      ${pkgs.openssl}/bin/openssl rand -base64 ${toString (args.length or 32)} | ${pkgs.coreutils}/bin/tr -d '\n'
+    '';
+
+  base64url =
+    { pkgs, args, ... }:
+    ''
+      ${pkgs.openssl}/bin/openssl rand -base64 ${toString (args.length or 32)} | ${pkgs.coreutils}/bin/tr -d '\n' | ${pkgs.coreutils}/bin/tr -- '+/' '-_'
     '';
 
   hex =
-    { pkgs, ... }:
+    { pkgs, args, ... }:
     ''
-      ${pkgs.openssl}/bin/openssl rand -hex 24 | ${pkgs.coreutils}/bin/tr -d '\n'
+      ${pkgs.openssl}/bin/openssl rand -hex ${toString (args.length or 24)} | ${pkgs.coreutils}/bin/tr -d '\n'
     '';
 
   passphrase =
     { pkgs, ... }:
     ''
       ${pkgs.xkcdpass}/bin/xkcdpass --numwords=6 --delimiter=' ' | ${pkgs.coreutils}/bin/tr -d '\n'
+    '';
+
+  bcrypt =
+    {
+      pkgs,
+      lib,
+      decrypt,
+      deps,
+      ...
+    }:
+    ''
+      ${decrypt} ${lib.escapeShellArg (builtins.head deps).rekey.id} | ${pkgs.mkpasswd}/bin/mkpasswd -m bcrypt -s | ${pkgs.coreutils}/bin/tr -d '\n'
     '';
 
   dhparams =
@@ -56,6 +74,12 @@
       priv=$(${pkgs.wireguard-tools}/bin/wg genkey)
       printf '%s' "$priv" | ${pkgs.wireguard-tools}/bin/wg pubkey > ${lib.escapeShellArg pubFile}
       printf '%s' "$priv"
+    '';
+
+  wireguard-psk =
+    { pkgs, ... }:
+    ''
+      ${pkgs.wireguard-tools}/bin/wg genpsk | ${pkgs.coreutils}/bin/tr -d '\n'
     '';
 
   age =
