@@ -35,5 +35,5 @@ rec {
       m = builtins.match "(.*)\\.[^.]*" base;
       stem = if m == null then base else builtins.head m;
     in
-    dirOf file + "/${stem}${lib.optionalString (key != null) ".${escape key}"}.pub";
+    dirOf file + (if key == null then "/${stem}.pub" else "/${stem}/${key}.pub");
 }

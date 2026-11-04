@@ -9,13 +9,14 @@ let
       sops.defaultSopsFile = fixtures + "/secrets/common.yaml";
       sops.rekey = {
         hostPubkey = fixtures + "/${name}_ed25519.pub";
+        keyPrefix = "${name}/";
         storageDir = fixtures + "/rekeyed";
       };
       sops.age.sshKeyPaths = [ "${fixtures + "/${name}_ed25519"}" ];
       sops.gnupg.sshKeyPaths = [ ];
 
       sops.secrets = {
-        shared = { };
+        shared.rekey.keyPrefix = "";
         generated.rekey = {
           file = fixtures + "/secrets/generated.yaml";
           key = "pw";
@@ -23,6 +24,7 @@ let
         };
         derived.rekey = {
           file = fixtures + "/secrets/generated.yaml";
+          keyPrefix = "";
           generator = {
             dependencies = [ config.sops.secrets.generated ];
             script =
@@ -39,7 +41,7 @@ in
   host1 = {
     imports = [ (common "host1") ];
     sops.secrets = {
-      only1.rekey.key = "host1/only";
+      only = { };
       wg.rekey = {
         file = fixtures + "/secrets/generated.yaml";
         key = "wg/host1";

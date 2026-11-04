@@ -12,7 +12,7 @@ pkgs.testers.runNixOSTest {
         m.wait_for_unit("multi-user.target")
         m.succeed("test \"$(cat /run/secrets/shared)\" = shared-value")
 
-    host1.succeed("test \"$(cat /run/secrets/only1)\" = only-host1")
+    host1.succeed("test \"$(cat /run/secrets/only)\" = only-host1")
     host2.succeed("printf 'binary\\ncontent' | cmp - /run/secrets/blob")
   '';
 }

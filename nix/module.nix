@@ -130,6 +130,15 @@ in
         readOnly = true;
         type = types.nullOr types.str;
       };
+      keyPrefix = mkOption {
+        default = "";
+        description = ''
+          Prepended to the default `rekey.key` of every secret, so that hosts
+          sharing one master file each get their own namespace in it.
+        '';
+        example = lib.literalExpression ''"hosts/''${config.networking.hostName}/"'';
+        type = types.str;
+      };
       storageDir = mkOption {
         default = null;
         description = ''
@@ -184,14 +193,20 @@ in
                 type = types.str;
               };
               key = mkOption {
-                default = if r.file != null && rl.isBinary r.file then null else name;
-                defaultText = lib.literalMD "the secret's name, or `null` for binary master files";
+                default = if r.file != null && rl.isBinary r.file then null else r.keyPrefix + name;
+                defaultText = lib.literalMD "`rekey.keyPrefix` + the secret's name, or `null` for binary master files";
                 description = "`/`-separated key path in the master file; `null` for the whole (binary) file.";
                 type = types.nullOr types.str;
               };
+              keyPrefix = mkOption {
+                default = cfg.keyPrefix;
+                defaultText = lib.literalExpression "config.sops.rekey.keyPrefix";
+                description = "Prefix of the default `rekey.key`, for secrets living in another namespace of the master file.";
+                type = types.str;
+              };
               pubFile = mkOption {
                 default = rl.pubFile r.file r.key;
-                defaultText = lib.literalMD "`<dir>/<stem>.<key>.pub` next to the master file";
+                defaultText = lib.literalMD "`<dir>/<stem>/<key>.pub` next to the master file (`<dir>/<stem>.pub` for binary files)";
                 description = ''
                   Public part written by generators such as `ssh-ed25519` or
                   `wireguard`; read it with `builtins.readFile`.

@@ -46,7 +46,7 @@ pkgs.runCommand "sops-rekey-integration"
     gen=$(get host1 host1+host2 $generated/pw)
     expect "''${#gen}" 48
     expect "$(get host2 host1+host2 $generated/derived)" "derived-$gen"
-    expect "$(get host1 host1 $generated/wg/host1 | wg pubkey)" "$(cat $f/secrets/generated.wg__host1.pub)"
+    expect "$(get host1 host1 $generated/wg/host1 | wg pubkey)" "$(cat $f/secrets/generated/wg/host1.pub)"
 
     echo "== editing one secret only rekeys the groups using it"
     untouched=$(sha256sum $f/rekeyed/host1.yaml $f/rekeyed/host2.yaml)
