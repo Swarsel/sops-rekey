@@ -63,6 +63,7 @@ let
       hostName: node:
       lib.mapAttrsToList (name: s: {
         inherit (s.rekey) id;
+        host = hostName;
         file = rl.relPath s.rekey.file;
         inherit (s.rekey) key;
         pubFile = rl.relPath s.rekey.pubFile;
@@ -88,10 +89,19 @@ in
     secrets = lib.mapAttrs (_: s: s.rekey.id) (rekeyedSecrets hostName node);
   }) participating;
   secrets = lib.mapAttrs (
-    _: es:
-    builtins.removeAttrs (builtins.head es) [ "id" ]
-    // {
-      generators = lib.concatMap (e: e.generators) es;
-    }
+    id: es:
+    lib.throwIf (builtins.length (lib.unique (map (e: e.pubFile) es)) > 1)
+      "sops-rekey: hosts disagree on rekey.pubFile for ${id}: ${
+        lib.concatMapStringsSep ", " (e: "${e.host} has ${e.pubFile}") es
+      }"
+      (
+        builtins.removeAttrs (builtins.head es) [
+          "id"
+          "host"
+        ]
+        // {
+          generators = lib.concatMap (e: e.generators) es;
+        }
+      )
   ) (builtins.groupBy (e: e.id) entries);
 }

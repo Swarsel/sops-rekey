@@ -79,6 +79,6 @@ In the above example, as soon as `nix run .#sops-rekey -- rekey` is called (this
 - `normalSecret` is not touched by this module
 - `defaultRekeyedSecret` looks for a key called `rekeyedSecret` in `./secrets/common.yaml`
 - `rekeyedSecret` looks for a key called `rekeyedSecret` in `./secrets/local.yaml`.
-- `generatedSecret` generates (only when missing) a WireGuard private key into `generatedSecret` in `./secrets/common.yaml` and writes the matching public key to `./secrets/common/generatedSecret.pub`. Also see the [complete set of generators](https://github.com/Swarsel/sops-rekey/blob/main/nix/generators.nix).
+- `generatedSecret` generates (only when missing) a WireGuard private key into `generatedSecret` in `./secrets/common.yaml` and writes the matching public key to `./secrets/common/generatedSecret.pub` (you can override this location using `[...].rekey.pubFile`). Also see the [complete set of generators](https://github.com/Swarsel/sops-rekey/blob/main/nix/generators.nix).
 
 All of the above "managed" secrets are then rekeyed  into `./rekeyed/<name>.yaml`. `<name>` is the hostnames that use this secret, concatenated with `+`.

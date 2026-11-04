@@ -130,6 +130,27 @@
             in
             assert !plain.config.sops.secrets.plain.rekey.enable;
             pkgs.runCommand "sops-rekey-eval-opt-in" { } "touch $out";
+          eval-pub-file =
+            let
+              custom = ./tests/fixtures/custom.pub;
+              withPubFile =
+                node: pubFile:
+                node.extendModules { modules = [ { sops.secrets.shared.rekey.pubFile = pubFile; } ]; };
+              manifestFor = nodes: import ./nix/manifest.nix { inherit lib pkgs nodes; };
+              id = testNodes.host1.config.sops.secrets.shared.rekey.id;
+              agreeing = manifestFor {
+                host1 = withPubFile testNodes.host1 custom;
+                host2 = withPubFile testNodes.host2 custom;
+              };
+              disagreeing = manifestFor {
+                host1 = withPubFile testNodes.host1 custom;
+                inherit (testNodes) host2;
+              };
+            in
+            assert agreeing.secrets.${id}.pubFile == "tests/fixtures/custom.pub";
+            assert !(agreeing.secrets.${id} ? host);
+            assert !(builtins.tryEval disagreeing.secrets.${id}).success;
+            pkgs.runCommand "sops-rekey-eval-pub-file" { } "touch $out";
         }
         // lib.optionalAttrs (pkgs.stdenv.hostPlatform.system == "x86_64-linux") {
           vm = import ./tests/vm.nix {

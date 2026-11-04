@@ -227,10 +227,10 @@ in
                     default = rl.pubFile r.file r.key;
                     defaultText = lib.literalMD "`<dir>/<stem>/<key>.pub` next to the master file (`<dir>/<stem>.pub` for binary files)";
                     description = ''
-                      Public part written by generators such as `ssh-ed25519` or
-                      `wireguard`; read it with `builtins.readFile`.
+                      Where generators such as `ssh-ed25519` or `wireguard` write the
+                      public part; read it with `builtins.readFile`. Must be inside the
+                      flake and the same on every host using this secret.
                     '';
-                    readOnly = true;
                     type = types.path;
                   };
                 };
